@@ -359,7 +359,7 @@ let random_subset = Gen.oneofl << powerset
     Since Verimon does not support var1 = var2 formulas this is used with n=1
     to pick variables for constraints of the form var = const
 *)
-let random_bounded_subset n = Gen.oneofl << List.filter (fun x -> let l = List.length x in 1<=l && l <= n) << powerset 
+let random_bounded_subset n = Gen.oneofl << List.filter (fun x -> let l = List.length x in 0<=l && l <= n) << powerset 
 
 let shuffle l =
   let a = Array.of_list l in

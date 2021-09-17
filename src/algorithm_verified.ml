@@ -1,19 +1,31 @@
 open MFOTL
 open Verified_adapter
+open Formula_serialize
 open Verified
 open Helper
 open Misc
+open Printf
 
 let no_mw = ref false
+let dump_to_json = ref false
 
 module IntMap = Map.Make(struct type t = int let compare = Stdlib.compare end)
 open IntMap
+
+
+let dump_formula dbschema (f:MFOTL.formula) =
+  let sf = convert_formula_serialize dbschema f in
+  let json = yojson_of_formula sf in
+  let str_json = Yojson.Safe.to_string json in
+  Printf.printf "%s\n" str_json;
+  exit 0
 
 let monitor dbschema logfile fv f =
   (* compute permutation for output tuples *)
   let fv_pos = List.map snd (Table.get_matches (MFOTL.free_vars f) fv) in
   assert (List.length fv_pos = List.length fv);
-
+  if !dump_to_json then
+    dump_formula dbschema f;
   let cf = convert_formula dbschema f in
   let cf = if !no_mw then cf else Monitor.convert_multiway cf in
   let init_state = Monitor.minit_safe cf in

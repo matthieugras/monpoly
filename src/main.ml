@@ -208,6 +208,7 @@ let _ =
     "-slicer", Arg.Set_string slicer_file, "\tFile used to test slicer";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
+    "-dump_verified", Arg.Set Algorithm_verified.dump_to_json, "\tDump the formula monitored to json format (only with the verified kernel)";
     "-unfold_let", Arg.Symbol (["no"; "full"; "smart"], set_unfold_let),
       "\tWhether and how LET expressions in the formula should be unfolded (default 'no')";
     "-strcache", Arg.Set Misc.str_cache, "\tUse string cache to reduce memory usage";

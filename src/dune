@@ -1,5 +1,6 @@
 (executable
   (name main)
+  (preprocess (staged_pps ppx_yojson_conv))
   (public_name monpoly)
   (package monpoly-dev)
   (libraries str unix zarith dune-build-info)

@@ -18,6 +18,8 @@ MonPoly is a prototype monitoring tool. It checks the compliance of log files
 with respect to policies that are specified by formulas in Metric First-Order
 Temporal Logic (MFOTL) with aggregations.")
   (depends
+    ppx_import
+    ppx_yojson_conv
     (ocaml (>= 4.11))
     (dune (>= 2.8))
     dune-build-info
