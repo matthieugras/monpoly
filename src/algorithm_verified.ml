@@ -17,8 +17,9 @@ let dump_formula dbschema f =
   let sf = convert_formula_serialize dbschema f in
   let json = yojson_of_formula sf in
   let str_json_pretty = Yojson.Safe.pretty_to_string json in
-  let str_json_compact = Yojson.Safe.to_string json in
-  Printf.printf "Pretty:\n%s\n\nCompact:\n%s\n" str_json_pretty str_json_compact;
+  (*let str_json_compact = Yojson.Safe.to_string json in *)
+  Printf.printf "%s\n" str_json_pretty;
+  (*Printf.printf "Pretty:\n%s\n\nCompact:\n%s\n" str_json_pretty str_json_compact;*)
   exit 0
 
 let monitor dbschema logfile fv f =

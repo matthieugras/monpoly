@@ -1,0 +1,1 @@
+P(x,y) AND (NOT (EXISTS z. P(r,z)))
