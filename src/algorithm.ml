@@ -339,15 +339,12 @@ let update_old_until q tsq i intv inf discard  =
       if k=q-1 then
         begin
           ignore(Sk.pop_first rels);
-          if not (Sk.is_empty rels) then
+          if not (Sk.is_empty rels) && fst (Sk.get_first rels) = q then
             let (k',relk') = Sk.pop_first rels in
-            assert(k'>=q && j>=q);
+            assert(k'=q && j>=q);
             let newrelk' = Relation.union relk relk' in
             Sk.add_first (k',newrelk') rels;
-            if k'=q then
-              newrelk'
-            else
-              relk
+            newrelk'
           else
           if (j>q-1) then
             begin
@@ -985,21 +982,21 @@ let rec eval f crt discard =
           let j2,tsj2,rel2 = Dllist.get_data !crt2_j in
           if j2 < q || not (MFOTL.in_right_ext (MFOTL.ts_minus tsj2 tsq) intv) then
             begin (* clean up from previous evaluation *)
-              ignore(Dllist.pop_first inf.listrel2);
               if not (Dllist.is_last inf.listrel2 !crt2_j) then
                 begin
+                  ignore(Dllist.pop_first inf.listrel2);
                   crt2_j := Dllist.get_next inf.listrel2 !crt2_j;
                   iter2 ()
                 end
             end
           else
             begin
-              let j1,tsj1,rel1 = Dllist.get_data !crt1_j in
-              assert(j1 = j2);
               if MFOTL.in_left_ext (MFOTL.ts_minus tsj2 tsq) intv then
                 begin
                   let resj = comp rel2 !f1union in
                   res := Relation.union !res resj;
+                  let j1,tsj1,rel1 = Dllist.get_data !crt1_j in
+                  assert(j1 = j2);
                   f1union := Relation.union !f1union rel1;
                   let is_last1 = Dllist.is_last inf.listrel1 !crt1_j in
                   let is_last2 = Dllist.is_last inf.listrel2 !crt2_j in
@@ -1790,31 +1787,17 @@ let rec check_log lexbuf ff posl neval i last =
         in
         process_command c;
     | MonpolyData {tp; ts; db} ->
-      if ts >= !lastts then
-        begin
-          crt_tp := tp;
-          crt_ts := ts;
-          add_index ff tp ts db;
-          ignore (Neval.append (tp, ts) neval);
-          let cont = process_index ff posl last tp in
-          lastts := ts;
-          if cont then
-            loop ffl (i + 1)
-          else
-            finish ()
-        end
-      else
-      if !Misc.stop_at_out_of_order_ts then
-        let msg = Printf.sprintf "[Algorithm.check_log] Error: OUT OF ORDER TIMESTAMP: %s \
-                                  (last_ts: %s)" (MFOTL.string_of_ts ts) (MFOTL.string_of_ts !lastts) in
-        failwith msg
-      else
-        begin
-          Printf.eprintf "[Algorithm.check_log] skipping OUT OF ORDER TIMESTAMP: %s \
-                          (last_ts: %s)\n%!"
-            (MFOTL.string_of_ts ts) (MFOTL.string_of_ts !lastts);
-          loop ffl i
-        end
+        crt_tp := tp;
+        crt_ts := ts;
+        add_index ff tp ts db;
+        ignore (Neval.append (tp, ts) neval);
+        let cont = process_index ff posl last tp in
+        lastts := ts;
+        if cont then
+          loop ffl (i + 1)
+        else
+          finish ()
+        
     | MonpolyTestTuple st -> finish ()
     | MonpolyError s -> finish ()
   in

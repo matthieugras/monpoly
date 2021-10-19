@@ -114,7 +114,7 @@ let get_signature_lexbuf lexbuf =
   try
     let sign = Log_parser.signature Log_lexer.token lexbuf in
     if Misc.debugging Dbg_all then
-      Printf.eprintf "[Log.get_sign] The signature file was parsed correctly.\n";
+      Printf.eprintf "[Log.get_sign] The signature file was parsed correctly.\n%!";
     if (List.mem_assoc "tp" sign || List.mem_assoc "ts" sign || List.mem_assoc "tp" sign) then
       failwith "[Log.get_sign] The predicates tp, ts, tpts are predefined and \
                 should not be declared in the signature file."
@@ -126,7 +126,7 @@ let get_signature_lexbuf lexbuf =
       in predefined_predicates @ sign
   with e ->
     Printf.eprintf
-      "[Log.get_sign_from_file] Failed to parse signature file. Error at line %d:\n%s\n"
+      "[Log.get_sign_from_file] Failed to parse signature file. Error at line %d:\n%s\n%!"
       lexbuf.lex_start_p.pos_lnum
       (Bytes.to_string lexbuf.lex_buffer);
     raise e
@@ -190,15 +190,33 @@ let get_next_entry lexbuf =
 
     | DataTuple {ts; db; complete;} ->
       if not complete then update lexbuf;
-      last_ts := ts;
-      incr tp;
-      if !Filter_empty_tp.enabled && Db.is_empty db then
-        begin (* skip empty db *)
-          incr skipped_tps;
-          get_next lexbuf
+      if ts >= !last_ts then
+        begin
+        (* Filter_empty_tp is force-disabled for formulas outside of the appropriate fragment *)
+        if !Filter_empty_tp.enabled && Db.is_empty db then
+          begin (* skip empty db *)
+            incr skipped_tps;
+            get_next lexbuf
+          end
+        else
+          begin
+            last_ts := ts;
+            incr tp;
+            MonpolyData {tp = !tp - 1; ts; db; }
+          end
         end
       else
-         MonpolyData {tp = !tp - 1; ts; db; }
+        if !Misc.stop_at_out_of_order_ts then
+          let msg = Printf.sprintf "[Algorithm.check_log] Error: OUT OF ORDER TIMESTAMP: %s \
+                                    (last_ts: %s)" (MFOTL.string_of_ts ts) (MFOTL.string_of_ts !last_ts) in
+          failwith msg
+        else
+          begin
+            Printf.eprintf "[Algorithm.check_log] skipping OUT OF ORDER TIMESTAMP: %s \
+                            (last_ts: %s)\n%!"
+              (MFOTL.string_of_ts ts) (MFOTL.string_of_ts !last_ts);
+            get_next lexbuf
+          end
 
     | CommandTuple { c; parameters } ->
         MonpolyCommand { c; parameters }
@@ -208,7 +226,7 @@ let get_next_entry lexbuf =
 
     | ErrorTuple s ->
       if Misc.debugging Dbg_filter then
-        Printf.eprintf "Filter_empty_tp: skipped: %d, notskipped: %d\n"
+        Printf.eprintf "Filter_empty_tp: skipped: %d, notskipped: %d\n%!"
           !skipped_tps (!tp - !skipped_tps);
 
       if not !last && !Misc.new_last_ts then

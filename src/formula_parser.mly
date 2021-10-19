@@ -46,7 +46,7 @@
 
   let f str =
     if Misc.debugging Dbg_parsing then
-      Printf.printf "[Formula_parser] %s\t\n" str
+      Printf.eprintf "[Formula_parser] %s\t\n%!" str
     else
       ()
 
@@ -150,6 +150,7 @@
 %token END
 %token EOF
 
+%nonassoc LET IN
 %right SINCE UNTIL
 %nonassoc PREV NEXT EVENTUALLY ONCE ALWAYS PAST_ALWAYS 
 %nonassoc EX FA
