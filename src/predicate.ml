@@ -323,7 +323,7 @@ let rec string_of_cst c =
 
   in match c with
   | Int i -> string_of_int i
-  | Float f -> Printf.sprintf "%g" f
+  | Float f -> Printf.sprintf "%.15e" f
   | Str s -> format_string s
   | ZInt i -> Z.to_string i
   | Regexp (p, _) -> Printf.sprintf "r%s" (format_string p)
