@@ -1,0 +1,5 @@
+(executable
+  (name gen_fma)
+  (public_name gen_fma)
+  (package monpoly-dev)
+  (libraries monitorcore qcheck))

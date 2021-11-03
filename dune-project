@@ -20,6 +20,7 @@ Temporal Logic (MFOTL) with aggregations.")
   (depends
     ppx_import
     ppx_yojson_conv
+    qcheck
     (ocaml (>= 4.11))
     (dune (>= 2.8))
     dune-build-info

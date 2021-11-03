@@ -23,6 +23,7 @@ Generate these formulas as base cases:
 | EAggMMOnce     (if aggregations enabled)
 *)
 
+open Monitorcore
 open QCheck
 open MFOTL
 open Predicate
