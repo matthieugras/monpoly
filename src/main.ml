@@ -173,6 +173,8 @@ let main () =
               else
                 Algorithm.monitor !logfile fv pf
           end
+        else
+          exit 1
       end
 
 let set_unfold_let = function
