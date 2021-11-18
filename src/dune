@@ -4,7 +4,8 @@
   (package monpoly-dev)
   (modules (:standard \ ("Main" Main_js)))
   (libraries (re_export str) (re_export unix) (re_export zarith) (re_export dune-build-info))
-  (flags (:standard -warn-error -A -w -27-32..39)))
+  (flags (:standard -warn-error -A -w -27-32..39))
+  (ocamlopt_flags (:standard -O3)))
 
 (ocamllex formula_lexer log_lexer)
 (ocamlyacc formula_parser log_parser)
