@@ -528,7 +528,7 @@ let string_of_ts ts =
     if ts = ts_max then
       "MaxTS"
     else
-      Printf.sprintf "%d" ts
+      Printf.sprintf "%d." ts
 
 let print_ts ts =
   print_string (string_of_ts ts)
