@@ -74,6 +74,8 @@ let nat_of_float arg = Nat (Z.of_float arg)
 
 let enat_of_float f = Enat (Nat (Z.of_float f))
 
+let enat_of_int arg = Enat (Nat (Z.of_int arg))
+
 let filterWith f p = List.map f << List.filter p
 
 let deoptionalize =
@@ -202,19 +204,19 @@ let convert_term fvl bvl =
 let convert_interval (l, r) =
   let lm =
     match l with
-    | OBnd a -> a +. 1.
+    | OBnd a -> a + 1
     | CBnd a -> a
     | Inf ->
         let msg = "Unsupported interval " ^ string_of_interval (l, r) in
         raise (UnsupportedFragment msg)
   in
   let um =
-    match r with OBnd a -> Some (a -. 1.) | CBnd a -> Some a | Inf -> None
+    match r with OBnd a -> Some (a - 1) | CBnd a -> Some a | Inf -> None
   in
   match um with
-  | None -> (nat_of_float lm, Infinity_enat)
+  | None -> (nat_of_int lm, Infinity_enat)
   | Some um ->
-      if lm <= um then (nat_of_float lm, enat_of_float um)
+      if lm <= um then (nat_of_int lm, enat_of_int um)
       else
         let msg = "Unsupported interval " ^ string_of_interval (l, r) in
         raise (UnsupportedFragment msg)

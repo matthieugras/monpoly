@@ -62,7 +62,7 @@
       | 's' -> 1
       | _ -> failwith "[Formula_parser.time_units] unrecognized time unit"
     in
-    float_of_int (d * n)
+    d * n
 
   let rec exists varlist f =
     match varlist with
@@ -75,7 +75,7 @@
     | vl -> ForAll (vl, f)
 
 
-  let dfintv = (MFOTL.CBnd 0., MFOTL.Inf)
+  let dfintv = (MFOTL.CBnd 0, MFOTL.Inf)
 
   let strip str =
     let len = String.length str in
@@ -272,7 +272,7 @@ rbound:
 
 units:
   | TU                      { f "ts";  timeunits $1 }
-  | INT                     { f "int"; $1 }
+  | INT                     { f "int"; int_of_float $1 }
 
 
 predicate:

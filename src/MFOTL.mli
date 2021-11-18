@@ -46,10 +46,10 @@
 open Predicate
 
 
-type timestamp = float
+type timestamp = int
 (** The type of timestamps. *)
 
-type tsdiff = float
+type tsdiff = int
     (** The type of differences between timestamps. Only used for
   clarity reasons in the types of some functions in other
   modules. *)

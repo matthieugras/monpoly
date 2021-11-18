@@ -41,9 +41,9 @@ let convert_db md =
   in
   let db_events = List.map convert_table (Db.get_tables md.db) in
   let all_events = List.fold_left add_builtin db_events
-    ["tp", [Int md.tp]; "ts", [Float md.ts]; "tpts", [Int md.tp; Float md.ts]]
+    ["tp", [Int md.tp]; "ts", [Int md.ts]; "tpts", [Int md.tp; Int md.ts]]
   in
-  (mk_db all_events, nat_of_float md.ts)
+  (mk_db all_events, nat_of_int md.ts)
 
 let cst_of_event_data = function
   | EInt x -> (try Int (Z.to_int x) with Z.Overflow -> ZInt x)

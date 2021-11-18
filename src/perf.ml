@@ -83,7 +83,7 @@ let show_results q tsq =
     begin
       Misc.alrm := false;
       ignore(Unix.alarm next_alarm);
-      Printf.eprintf "show_results: loop %6d @%.0f (after 5min) \n%!" q tsq;
+      Printf.eprintf "show_results: loop %6d @%d (after 5min) \n%!" q tsq;
     end
 
 

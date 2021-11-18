@@ -1211,9 +1211,9 @@ let add_index f i tsi db =
            with Not_found ->
            match Predicate.get_name p with
            | "tp" -> Relation.singleton (Tuple.make_tuple [Int i])
-           | "ts" -> Relation.singleton (Tuple.make_tuple [Float tsi])
+           | "ts" -> Relation.singleton (Tuple.make_tuple [Int tsi])
            | "tpts" ->
-             Relation.singleton (Tuple.make_tuple [Int i; Float tsi])
+             Relation.singleton (Tuple.make_tuple [Int i; Int tsi])
            | _ -> Relation.empty
           )
         in
@@ -1650,7 +1650,7 @@ let merge_formulas files =
       List.fold_right (fun s (last_ts1,posl,mf1,neval,lastev,tp1,last) ->
         let (last_ts,_,mf2,_,_,tp,_) = read_m_from_file s in
 
-        if (MFOTL.ts_minus last_ts1 last_ts) = 0. then failwith "[merge_formulas] last_ts mismatch";
+        if (MFOTL.ts_minus last_ts1 last_ts) = 0 then failwith "[merge_formulas] last_ts mismatch";
         if tp1 <> tp then failwith "[merge_formulas] tp mismatch";
 
         let comb_mf = Splitting.comb_m lastev mf1 mf2 in

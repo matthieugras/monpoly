@@ -135,9 +135,9 @@ let m_to_ext mf =
       let (_, tsq) = Neval.get_data meinf.melastev in
       let (tsj, _) = Dllist.get_first meauxrels in
       (* Catch case where auxrels contains exactly one element with same ts as elast *)
-      if ((MFOTL.ts_minus tsj tsq) < 0.0) then
+      if ((MFOTL.ts_minus tsj tsq) < 0) then
         let tree_list, elast =
-          let cond = fun (tsj,_) -> (MFOTL.ts_minus tsj tsq) < 0.0 in
+          let cond = fun (tsj,_) -> (MFOTL.ts_minus tsj tsq) < 0 in
           Helper.get_new_elements meinf.meauxrels Dllist.void cond (fun x -> x)
         in
         let einf = {elastev = meinf.melastev; etree = Sliding.build_rl_tree_from_seq Relation.union tree_list; elast = elast;eauxrels = meinf.meauxrels} in

@@ -42,7 +42,7 @@
 open Unix
 open Predicate
 
-type timestamp = float
+type timestamp = int
 type tsdiff = timestamp
 type bound = OBnd of tsdiff | CBnd of tsdiff | Inf
 type interval = bound * bound
@@ -90,7 +90,7 @@ let unixts = ref false
 
 let ts_of_string err_place str =
   try
-    float_of_string str
+    int_of_string str
   with Failure _ ->
     let msg = Printf.sprintf "[%s, MFOTL.ts_of_string] Cannot convert %s into a timestamp" err_place str in
     failwith msg
@@ -98,40 +98,19 @@ let ts_of_string err_place str =
 let ts_of_cst c =
   match c with
   | ZInt _
-  | Regexp _
-  | Int _ -> failwith "[MFOTL.ts_of_cst] conversion not possible"
-  | Str s -> float_of_string s
-  | Float f -> f
-let cst_of_ts t = Str (string_of_float t)
+  | Regexp _ -> failwith "[MFOTL.ts_of_cst] conversion not possible"
+  | Int i -> i
+  | Str s -> int_of_string s
+  | Float f -> failwith "[MFOTL.ts_of_cst] conversion not possible"
+let cst_of_ts t = Str (string_of_int t)
 let tsdiff_of_cst = ts_of_cst
 let cst_of_tsdiff = cst_of_ts
 
-let ts_plus t1 t2 = t1 +. t2
-let ts_minus t1 t2 = t1 -. t2
-let ts_invalid = -1.
-let ts_null = 0.
-let ts_max = max_float
-
-
-let ts_of_string2 err_place str =
-  try
-    int_of_string str
-  with Failure _ ->
-    (* a way of avoiding the problem of too big integers *)
-    let lens = String.length str in
-    let lenm = String.length (string_of_int max_int) in
-    let str =
-      if lens >= lenm then
-        let d = lens-lenm+1 in
-        String.sub str d (lens-d)
-      else
-        str
-    in
-    try
-      int_of_string str
-    with Failure _ ->
-      let msg = Printf.sprintf "[%s, MFOTL.ts_of_string] Cannot convert %s into a timestamp" err_place str in
-      failwith msg
+let ts_plus t1 t2 = t1 + t2
+let ts_minus t1 t2 = t1 - t2
+let ts_invalid = -1
+let ts_null = 0
+let ts_max = max_int
 
 
 (* TODO: these function names are not intuitive, because one usually
@@ -160,7 +139,7 @@ let in_interval v intv =
 
 let infinite_interval (_, b) = (b = Inf)
 
-let init_interval (_, b) = (CBnd 0., b)
+let init_interval (_, b) = (CBnd 0, b)
 
 let aggreg_default_value op t = match op, t with
   | Min, TFloat -> Float infinity
@@ -541,7 +520,7 @@ let count_pred_uses pred f =
 
 let string_of_ts ts =
   if !unixts then
-    let tm = Unix.gmtime ts in
+    let tm = Unix.gmtime (float_of_int ts) in
     Printf.sprintf "%d-%d-%d %d:%d:%d"
       tm.tm_year tm.tm_mon tm.tm_mday
       tm.tm_hour tm.tm_min tm.tm_sec
@@ -549,20 +528,20 @@ let string_of_ts ts =
     if ts = ts_max then
       "MaxTS"
     else
-      Printf.sprintf "%F" ts
+      Printf.sprintf "%d" ts
 
 let print_ts ts =
   print_string (string_of_ts ts)
 
 let string_of_interval (a,b) =
   (match a with
-    | OBnd a -> Printf.sprintf "(%.0f," a
-    | CBnd a -> Printf.sprintf "[%.0f," a
+    | OBnd a -> Printf.sprintf "(%d," a
+    | CBnd a -> Printf.sprintf "[%d," a
     | Inf -> Printf.sprintf "(*,") 
   ^
   (match b with
-  | OBnd b -> Printf.sprintf "%.0f)" b
-  | CBnd b -> Printf.sprintf "%.0f]" b
+  | OBnd b -> Printf.sprintf "%d)" b
+  | CBnd b -> Printf.sprintf "%d]" b
   | Inf -> Printf.sprintf "*)")
 
 let print_interval (a,b) =
