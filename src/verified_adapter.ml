@@ -2,66 +2,99 @@ open MFOTL
 open Verified.Monitor
 open Predicate
 open Relation
-open Helper
 open Formula_serialize
 
 exception UnsupportedFragment of string
 
-let (<<) f g x = f(g(x))
-let nat_of_int = nat_of_integer << Z.of_int
-let nat_of_float = nat_of_integer << Z.of_float
-let int_of_nat = Z.to_int << integer_of_nat (* Problem? *)
-let int_of_enat = function
-  | Enat n -> Z.to_int (integer_of_nat n)
-  | Infinity_enat -> failwith "[int_of_enat] internal error"
+let unsupported msg = raise (UnsupportedFragment msg)
 
-let deoptionalize  =
-  let is_some = function Some _ -> true | _ -> false in
-  List.map (function | Some x -> x | None -> assert false) << List.filter (is_some)
+let nat_of_int i = nat_of_integer (Z.of_int i)
+let int_of_nat n = Z.to_int (integer_of_nat n) (* Problem? *)
 
-let convert_cst = function
-  | Int x -> EInt (Z.of_int x)
-  | Str x -> EString x
-  | Float x -> EFloat x
-  | ZInt x -> EInt x
+let convert_tuple (pname, tl) sl =
+  let pos = ref 0 in
+  let type_error tname =
+    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for \
+      \ predicate %s, field number %d") tname pname !pos in
+    failwith msg
+  in
+  List.map2
+    (fun (_, t) s ->
+      incr pos;
+      Some (match t with
+      | TInt ->
+        (try EInt (Z.of_string s)
+         with Invalid_argument _ -> type_error "int")
+      | TStr -> EString s
+      | TFloat ->
+        (try EFloat (float_of_string s)
+         with Failure _ -> type_error "float")
+      | TRegexp -> unsupported "Regular expressions constants are not supported"
+      )
+    )
+    tl sl
 
-let convert_db md =
-  let rbt_single x = RBT_set (rbt_insert x rbt_empty) in
-  let convert_cst' x = Some (convert_cst x) in
-  let add_builtin xs (name, tup) =
-    let arity = nat_of_int (List.length tup) in
-    ((name, arity), rbt_single (List.map convert_cst' tup)) :: xs
-  in
-  let convert_table t =
-    let (name, attrs) = (Table.get_schema t) in
-    let arity = nat_of_int (List.length attrs) in
-    ((name, arity), RBT_set (Relation.fold
-      (fun v -> rbt_insert (List.map convert_cst' v))
-      (Table.get_relation t) rbt_empty))
-  in
-  let db_events = List.map convert_table (Db.get_tables md.db) in
-  let all_events = List.fold_left add_builtin db_events
-    ["tp", [Int md.tp]; "ts", [Int md.ts]; "tpts", [Int md.tp; Int md.ts]]
-  in
-  (mk_db all_events, nat_of_int md.ts)
+type db = ((string * nat), (((event_data option) list) set list)) mapping
+
+let empty_db = empty_db
+
+let insert_into_db ((pname, tl) as schema) sl db =
+  let a = nat_of_int (List.length tl) in
+  insert_into_db (pname, a) (convert_tuple schema sl) db
+
+type state =
+  (((nat *
+      (nat *
+        (bool list *
+          (bool list *
+            ((nat * ((event_data option) list) set) queue *
+              ((nat * ((event_data option) list) set) queue *
+                (((event_data option) list) set *
+                  ((((event_data option) list), nat) mapping *
+                    (((event_data option) list), nat) mapping)))))))) *
+     aggaux option),
+    ((nat *
+       (nat queue *
+         ((((event_data option) list) set * (nat, nat) sum) queue *
+           (nat *
+             (bool list *
+               (bool list *
+                 (((event_data option) list) set *
+                   ((((event_data option) list), nat) mapping *
+                     ((nat, (((event_data option) list), (nat, nat) sum)
+                              mapping)
+                        mapping *
+                       ((nat, nat) mapping *
+                         (((event_data option) list) set list *
+                           nat))))))))))) *
+      aggaux option),
+    unit)
+    mstate_ext
+
+let init cf = minit_safe cf
 
 let cst_of_event_data = function
   | EInt x -> (try Int (Z.to_int x) with Z.Overflow -> ZInt x)
   | EFloat x -> Float x
   | EString x -> Str x
 
-let convert_tuple xs = Tuple.make_tuple (List.map cst_of_event_data (deoptionalize xs))
+let unconvert_tuple l =
+  List.filter_map (Option.map cst_of_event_data) l |> Tuple.make_tuple
 
-(* (Verified.nat * Verified.event_data option list Verified.set) list -> (int * relation) list *)
-let convert_violations =
-  List.map (fun (tp, rbt) ->
-  let v = match rbt with
-    | RBT_set r -> r
-    | _ -> failwith "Impossible!" in
-    ((int_of_nat tp),
-     Relation.make_relation
-      (rbt_fold (fun t l -> (convert_tuple t) :: l) v [] )))
+let set_fold f s x = match s with
+  | RBT_set r -> rbt_fold f r x
+  | _ -> failwith "[set_fold] unexpected set representation"
+
+let unconvert_violations =
+  let add_tuple t = Relation.add (unconvert_tuple t) in
+  let ucv_rel rel = set_fold add_tuple rel Relation.empty in
+  let ucv (tp, (ts, v)) = (int_of_nat tp, int_of_nat ts, ucv_rel v) in
+  List.map ucv
+
+let step t db st =
+  let (vs, st') = mstep (db, nat_of_int t) st in
+  (unconvert_violations vs, st')
 
 let is_monitorable dbschema f =
-  let s = (mmonitorable_exec << convert_formula dbschema) f in
+  let s = mmonitorable_exec (convert_formula dbschema f) in
   (s, (if s then None else Some (f, "MFODL formula is not monitorable")))
