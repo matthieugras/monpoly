@@ -60,6 +60,7 @@ type formula =
   | MatchP of interval * regex
   | TP of trm
   | TS of trm
+  | TPTS of trm * trm
 [@@deriving yojson_of]
 
 and regex =
@@ -172,6 +173,7 @@ let rec formula_to_verified : formula -> Verified.Monitor.formula = function
           formula_to_verified x6 )
   | TP x -> TP (trm_to_verified x)
   | TS x -> TS (trm_to_verified x)
+  | TPTS (x1, x2) -> And (TP (trm_to_verified x1), TS(trm_to_verified x2))
 
 and regex_to_verified : regex -> Verified.Monitor.formula Verified.Monitor.regex
     = function
@@ -236,11 +238,11 @@ let convert_agg_op = function
 (* These must be synchronized with Db.base_schema *)
 let special_predicates = ["tp"; "ts"; "tpts"]
 
-let convert_special_predicate fvl bvl = function
+let convert_special_predicate1 fvl bvl = function
   | ("tp", _, [t]) -> TP (convert_term fvl bvl t)
   | ("ts", _, [t]) -> TS (convert_term fvl bvl t)
-  | ("tpts", _, [t1; t2]) -> And (TP (convert_term fvl bvl t1), TS (convert_term fvl bvl t2))
-  | _ -> failwith "[convert_special_predicate] internal error"
+  | ("tpts", _, [t1; t2]) -> TPTS ((convert_term fvl bvl t1),(convert_term fvl bvl t2))
+  | _ -> failwith "[convert_special_predicate1] internal error"
 
 let convert_formula_serialize dbschema f =
   let free_vars = MFOTL.free_vars f in
@@ -256,7 +258,7 @@ let convert_formula_serialize dbschema f =
   | Pred p ->
       let (n, a, tl) = p in
       if List.mem n special_predicates && not (List.mem (n, a) lets)
-      then convert_special_predicate fvl bvl p
+      then convert_special_predicate1 fvl bvl p
       else Pred (n, List.map (convert_term fvl bvl) tl)
   | Let (p,f1,f2) ->
       let (n,a,ts) = Predicate.get_info p in
