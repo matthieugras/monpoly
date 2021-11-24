@@ -10,7 +10,6 @@ license: "LGPL-2.1-only WITH OCaml-LGPL-linking-exception"
 homepage: "https://infsec.ethz.ch/research/software/monpoly.html"
 bug-reports: "https://bitbucket.org/jshs/monpoly/issues"
 depends: [
-  "ppx_import"
   "ppx_yojson_conv"
   "qcheck"
   "ocaml" {>= "4.11"}

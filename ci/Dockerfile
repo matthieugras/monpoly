@@ -7,5 +7,5 @@ RUN apt-get update -y &&\
     useradd -m jenkins -u ${jenkins_id}
 USER jenkins
 RUN opam init -y &&\
-    opam install -y dune ppx_import ppx_yojson_conv qcheck zarith dune-build-info
+    opam install -y dune ppx_yojson_conv qcheck zarith dune-build-info
   
