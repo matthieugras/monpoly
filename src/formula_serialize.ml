@@ -4,7 +4,7 @@ open Relation
 open Helper
 open Verified.Monitor
 
-module Z = struct
+module MyZ = struct
   include Z
 
   let yojson_of_t arg = yojson_of_int (Z.to_int arg)
@@ -14,9 +14,9 @@ exception UnsupportedFragment of string
 let unsupported msg = raise (UnsupportedFragment msg)
 
 
-type nat = Nat of Z.t [@@deriving yojson_of]
+type nat = Nat of MyZ.t [@@deriving yojson_of]
 
-type event_data = EInt of Z.t | EFloat of float | EString of string
+type event_data = EInt of MyZ.t | EFloat of float | EString of string
 [@@deriving yojson_of]
 
 type trm =
@@ -71,32 +71,13 @@ and regex =
   | Star of regex
 [@@deriving yojson_of]
 
-let wild = Skip (Nat (Z.of_int 1))
+let wild = Skip (Nat (MyZ.of_int 1))
 
-let ( << ) f g x = f (g x)
+let nat_of_int arg = Nat (MyZ.of_int arg)
 
-let nat_of_int arg = Nat (Z.of_int arg)
+let my_enat_of_int arg = Enat (Nat (arg))
 
-let nat_of_float arg = Nat (Z.of_float arg)
-
-let enat_of_float f = Enat (Nat (Z.of_float f))
-
-let enat_of_int arg = Enat (Nat (Z.of_int arg))
-
-let filterWith f p = List.map f << List.filter p
-
-let deoptionalize =
-  let is_some = function Some _ -> true | _ -> false in
-  List.map (function Some x -> x | None -> assert false)
-  << List.filter is_some
-
-let index_of =
-  let rec index_of_rec c x lst =
-    match lst with
-    | [] -> raise (Failure "Not Found")
-    | hd :: tl -> if hd = x then c else index_of_rec (c + 1) x tl
-  in
-  index_of_rec 0
+let my_nat_of_integer arg = Nat (arg)
 
 let cst_to_verified : event_data -> Verified.Monitor.event_data = function
   | EInt x -> EInt x
@@ -184,7 +165,7 @@ and regex_to_verified : regex -> Verified.Monitor.formula Verified.Monitor.regex
     | Star x -> Star (regex_to_verified x)
 
 let convert_cst = function
-  | Int x -> EInt (Z.of_int x)
+  | Int x -> EInt (MyZ.of_int x)
   | Str x -> EString x
   | Float x -> EFloat x
   | ZInt x -> EInt x
@@ -210,21 +191,21 @@ let convert_term fvl bvl =
   in
   convert
 
-let convert_interval (l,r) =
+let convert_interval (l,r) : interval =
   let lm = match l with
-    | OBnd a -> (a+1)
+    | OBnd a -> MyZ.(a + one)
     | CBnd a -> a
     | Inf -> unsupported ("Unsupported interval " ^ (string_of_interval (l,r)))
   in
   let um = match r with
-    | OBnd a -> Some (a-1)
+    | OBnd a -> Some MyZ.(a - one)
     | CBnd a ->  Some a
     | Inf -> None in
   match um with
-  | None -> ((nat_of_int lm), Infinity_enat)
+  | None -> ((my_nat_of_integer lm), Infinity_enat)
   | Some um ->
     if lm <= um
-    then ((nat_of_int lm), (enat_of_int um))
+    then ((my_nat_of_integer lm), (my_enat_of_int um))
     else unsupported ("Unsupported interval " ^ (string_of_interval (l,r)))
 
 let convert_agg_op = function

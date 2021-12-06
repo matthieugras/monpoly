@@ -2,14 +2,15 @@ open MFOTL
 open Verified.Monitor
 open Predicate
 open Relation
+open Helper
 open Formula_serialize
 
 exception UnsupportedFragment of string
 
 let unsupported msg = raise (UnsupportedFragment msg)
 
+let int_of_nat n = Z.to_int (integer_of_nat n)
 let nat_of_int i = nat_of_integer (Z.of_int i)
-let int_of_nat n = Z.to_int (integer_of_nat n) (* Problem? *)
 
 let convert_tuple (pname, tl) sl =
   let pos = ref 0 in
@@ -88,11 +89,11 @@ let set_fold f s x = match s with
 let unconvert_violations =
   let add_tuple t = Relation.add (unconvert_tuple t) in
   let ucv_rel rel = set_fold add_tuple rel Relation.empty in
-  let ucv (tp, (ts, v)) = (int_of_nat tp, int_of_nat ts, ucv_rel v) in
+  let ucv (tp, (ts, v)) = (int_of_nat tp, integer_of_nat ts, ucv_rel v) in
   List.map ucv
 
 let step t db st =
-  let (vs, st') = mstep (db, nat_of_int t) st in
+  let (vs, st') = mstep (db, nat_of_integer t) st in
   (unconvert_violations vs, st')
 
 let is_monitorable dbschema f =
