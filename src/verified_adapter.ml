@@ -51,8 +51,11 @@ type state =
             ((nat * ((event_data option) list) set) queue *
               ((nat * ((event_data option) list) set) queue *
                 (((event_data option) list) set *
-                  ((((event_data option) list), nat) mapping *
-                    (((event_data option) list), nat) mapping)))))))) *
+                  (event_data wf_table *
+                    ((((event_data option) list), nat) mapping *
+                      (event_data wf_table *
+                        (((event_data option) list), nat)
+                          mapping)))))))))) *
      aggaux option),
     ((nat *
        (nat queue *
@@ -75,7 +78,7 @@ type state =
 let init cf = minit_safe cf
 
 let cst_of_event_data = function
-  | EInt x -> (try Int (Z.to_int x) with Z.Overflow -> ZInt x)
+  | EInt x -> Int x
   | EFloat x -> Float x
   | EString x -> Str x
 

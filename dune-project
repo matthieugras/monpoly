@@ -15,7 +15,7 @@
   (synopsis "Library for the MonPoly and VeriMon monitoring tools")
   (depends
     ppx_yojson_conv
-    (ocaml (>= 4.11))
+    (ocaml (>= 4.13))
     (dune (>= 2.8))
     (zarith (>= 1.11))))
 

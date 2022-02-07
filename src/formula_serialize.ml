@@ -165,10 +165,9 @@ and regex_to_verified : regex -> Verified.Monitor.formula Verified.Monitor.regex
     | Star x -> Star (regex_to_verified x)
 
 let convert_cst = function
-  | Int x -> EInt (MyZ.of_int x)
+  | Int x -> EInt x
   | Str x -> EString x
   | Float x -> EFloat x
-  | ZInt x -> EInt x
   | Regexp _ -> unsupported "Regular expression constant are not supported"
 
 let convert_var fvl bvl a = nat_of_int (try (Misc.get_pos a bvl)
@@ -227,7 +226,7 @@ let convert_special_predicate1 fvl bvl = function
 
 let convert_formula_serialize dbschema f =
   let free_vars = MFOTL.free_vars f in
-  let truth = Equal (Cst (Int 0), Cst (Int 0)) in
+  let truth = Equal (Cst (Int Z.zero), Cst (Int Z.zero)) in
   let rec createExists n f = match n with
     | 0 -> f
     | n -> createExists (n-1) (Exists f)
