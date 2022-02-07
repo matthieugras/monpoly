@@ -40,7 +40,7 @@ exception Stop_parser
 module type Consumer = sig
   type t
   val begin_tp: t -> MFOTL.timestamp -> unit
-  val tuple: t -> Table.schema -> string list -> unit
+  val tuple: t -> string -> Tuple.tuple -> unit
   val end_tp: t -> unit
   val command: t -> string -> Helper.commandParameter option -> unit
   val end_log: t -> unit

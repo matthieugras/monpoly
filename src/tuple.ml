@@ -42,6 +42,7 @@ open Predicate
 open MFOTL
 
 type tuple = cst list
+type named_tuple = var * tuple
 
 
 (* String interning *)

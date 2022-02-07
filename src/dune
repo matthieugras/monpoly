@@ -2,7 +2,7 @@
   (name libmonpoly)
   (preprocess (staged_pps ppx_yojson_conv))
   (public_name libmonpoly)
-  (libraries str unix zarith)
+  (libraries str unix zarith ctypes)
   (modules (:standard \ Main Main_js)))
 
 (executable

@@ -12,36 +12,27 @@ let unsupported msg = raise (UnsupportedFragment msg)
 let int_of_nat n = Z.to_int (integer_of_nat n)
 let nat_of_int i = nat_of_integer (Z.of_int i)
 
-let convert_tuple (pname, tl) sl =
+let convert_tuple pname tl =
   let pos = ref 0 in
-  let type_error tname =
-    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for \
-      \ predicate %s, field number %d") tname pname !pos in
-    failwith msg
-  in
-  List.map2
-    (fun (_, t) s ->
+  List.map
+    (fun t ->
       incr pos;
+      Predicate.(
       Some (match t with
-      | TInt ->
-        (try EInt (Z.of_string s)
-         with Invalid_argument _ -> type_error "int")
-      | TStr -> EString s
-      | TFloat ->
-        (try EFloat (float_of_string s)
-         with Failure _ -> type_error "float")
-      | TRegexp -> unsupported "Regular expressions constants are not supported"
-      )
-    )
-    tl sl
+        | Int t -> EInt t
+        | Str t -> EString t
+        | Float t -> EFloat t
+        | Regexp _ -> unsupported "Regular expressions constants are not supported"
+      )))
+    tl
 
 type db = ((string * nat), (((event_data option) list) set list)) mapping
 
 let empty_db = empty_db
 
-let insert_into_db ((pname, tl) as schema) sl db =
+let insert_into_db pname tl db =
   let a = nat_of_int (List.length tl) in
-  insert_into_db (pname, a) (convert_tuple schema sl) db
+  insert_into_db (pname, a) (convert_tuple pname tl) db
 
 type state =
   (((nat *

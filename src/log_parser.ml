@@ -37,7 +37,7 @@ exception Stop_parser
 module type Consumer = sig
   type t
   val begin_tp: t -> MFOTL.timestamp -> unit
-  val tuple: t -> Table.schema -> string list -> unit
+  val tuple: t -> string -> Tuple.tuple ->  unit
   val end_tp: t -> unit
   val command: t -> string -> Helper.commandParameter option -> unit
   val end_log: t -> unit
@@ -65,13 +65,15 @@ let string_of_token (t: Log_lexer.token) =
 type parsebuf = {
   pb_lexbuf: Lexing.lexbuf;
   mutable pb_token: Log_lexer.token;
-  mutable pb_schema: Table.schema;
+  mutable pb_pname: string;
+  mutable pb_tys: (string * Predicate.tcst) list;
 }
 
 let init_parsebuf lexbuf = {
   pb_lexbuf = lexbuf;
   pb_token = Log_lexer.token lexbuf;
-  pb_schema = ("", []);
+  pb_pname = "";
+  pb_tys = [];
 }
 
 let next pb = pb.pb_token <- Log_lexer.token pb.pb_lexbuf
@@ -263,12 +265,13 @@ module Make(C: Consumer) = struct
       match pb.pb_token with
       | STR s ->
           (match List.assoc_opt s db_schema with
-          | Some tl ->
-              pb.pb_schema <- (s, tl);
+          | Some tys ->
+              pb.pb_pname <- s;
+              pb.pb_tys <- tys;
               next pb;
               (match pb.pb_token with
               | LPA -> next pb; parse_tuple ()
-              | _ -> C.tuple ctxt pb.pb_schema []; parse_db ())
+              | _ -> C.tuple ctxt s []; parse_db ())
           | None -> fail ("Predicate " ^ s
               ^ " was not defined in the signature."))
       | AT ->
@@ -293,14 +296,17 @@ module Make(C: Consumer) = struct
           parse_tuple_cont []
       | STR s ->
           next pb;
-          parse_tuple_cont [s]
+          parse_tuple_cont [parse_tuple_element s]
       | t -> fail ("Expected a tuple field or ')' but saw " ^ string_of_token t)
     and parse_tuple_cont l =
       debug "tuple_cont";
       match pb.pb_token with
       | RPA ->
           next pb;
-          C.tuple ctxt pb.pb_schema (List.rev l);
+          (if pb.pb_tys <> [] then 
+            failwith (Printf.sprintf "not enough arguments for tuple %s"
+                      pb.pb_pname));
+          C.tuple ctxt pb.pb_pname (List.rev l);
           (match pb.pb_token with
           | LPA -> next pb; parse_tuple ()
           | _ -> parse_db ())
@@ -309,9 +315,19 @@ module Make(C: Consumer) = struct
           (match pb.pb_token with
           | STR s ->
               next pb;
-              parse_tuple_cont (s::l)
+              parse_tuple_cont ((parse_tuple_element s)::l)
           | t -> fail ("Expected a tuple field but saw " ^ string_of_token t))
       | t -> fail ("Expected ',' or ')' but saw " ^ string_of_token t)
+    and parse_tuple_element s =
+      match pb.pb_tys with
+      | (_, ty) :: tys ->
+          pb.pb_tys <- tys;
+          Predicate.(match ty with 
+             | TInt -> Int (Z.of_string s)
+             | TFloat -> Float (float_of_string s)
+             | TStr -> Str s
+             | TRegexp -> failwith "regexp predicate not supported")
+      | [] -> failwith (Printf.sprintf "not enough arguments for predicate %s" pb.pb_pname)
     and parse_command () =
       debug "command";
       match pb.pb_token with

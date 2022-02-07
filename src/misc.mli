@@ -83,6 +83,7 @@ val debugging: dbg -> bool
 (** [debugging d] returns [true] if debugging is activated for
     the debuggin unit [d]. *)
 
+val socket_input: bool ref
 
 
 val map_interval: (int -> 'a) -> int -> int -> 'a list

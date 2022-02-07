@@ -7,7 +7,7 @@ val is_monitorable: Db.schema -> formula -> bool * (formula * string) option
 
 type db
 val empty_db: db
-val insert_into_db: Table.schema -> string list -> db -> db
+val insert_into_db: var -> Tuple.tuple -> db -> db
 
 type state
 val init: Verified.Monitor.formula -> state

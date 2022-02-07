@@ -1691,26 +1691,14 @@ module Monitor = struct
     if Misc.debugging Dbg_perf then
       Perf.check_log ctxt.s_log_tp ctxt.s_log_ts
 
-  let tuple ctxt (name, tl) sl =
-    if not ctxt.s_skip && (not !Filter_rel.enabled || Filter_rel.rel_OK name)
+  let tuple ctxt pname tuple =
+    if not ctxt.s_skip && (not !Filter_rel.enabled || Filter_rel.rel_OK pname)
     then
-      let tuple =
-        try Tuple.make_tuple2 sl tl with
-        | Invalid_argument _ ->
-          Printf.eprintf "Error: Wrong tuple length for predicate %s\
-            \ (expected: %d, actual: %d)\n"
-            name (List.length tl) (List.length sl);
-          exit 1
-        | Type_error msg ->
-          Printf.eprintf "Error: Wrong type for predicate %s: %s\n"
-            name msg;
-          exit 1
-      in
-      if not !Filter_rel.enabled || Filter_rel.tuple_OK name tuple then
+      if not !Filter_rel.enabled || Filter_rel.tuple_OK pname tuple then
         try
-          let rel = Hashtbl.find ctxt.s_db name in
-          Hashtbl.replace ctxt.s_db name (Relation.add tuple rel)
-        with Not_found -> Hashtbl.add ctxt.s_db name (Relation.singleton tuple)
+          let rel = Hashtbl.find ctxt.s_db pname in
+          Hashtbl.replace ctxt.s_db pname (Relation.add tuple rel)
+        with Not_found -> Hashtbl.add ctxt.s_db pname (Relation.singleton tuple)
 
   let eval_tp ctxt =
     ctxt.s_in_tp <- ctxt.s_log_tp;
@@ -1793,6 +1781,7 @@ module Monitor = struct
 end
 
 module Parser = Log_parser.Make (Monitor)
+module SParser = Socket_input.Make (Monitor)
 
 let init_monitor_state dbschema fv f =
   (* compute permutation for output tuples *)
@@ -1810,21 +1799,29 @@ let init_monitor_state dbschema fv f =
     s_in_tp = -1;
     s_last = last; }
 
+let monitor_all dbschema ctxt file_or_sock =
+  if !Misc.socket_input then
+    ignore (SParser.parse ctxt dbschema file_or_sock)
+  else
+    ignore (Parser.parse_file dbschema file_or_sock ctxt)
+
 let monitor_string dbschema log fv f =
+  (if !Misc.socket_input then
+    failwith "monitoring from string not supported with socket input");
   let lexbuf = Lexing.from_string log in
   let ctxt = init_monitor_state dbschema fv f in
   ignore (Parser.parse dbschema lexbuf ctxt)
 
 let monitor dbschema logfile fv f =
   let ctxt = init_monitor_state dbschema fv f in
-  ignore (Parser.parse_file dbschema logfile ctxt)
+  monitor_all dbschema ctxt logfile
 
 (* Unmarshals formula & state from resume file and then starts processing
    logfile. *)
 let resume dbschema logfile =
   let ctxt = unmarshal !resumefile in
   Printf.printf "%s\n%!" restored_state_msg;
-  ignore (Parser.parse_file dbschema logfile ctxt)
+  monitor_all dbschema ctxt logfile
 
 (* Combines states from files which are marshalled from an identical extformula. Same as resume
    the log file then processed from the beginning *)
@@ -1832,4 +1829,4 @@ let combine dbschema logfile =
   let files = files_to_list !combine_files in
   let ctxt = merge_states files in
   Printf.printf "%s\n%!" combined_state_msg;
-  ignore (Parser.parse_file dbschema logfile ctxt)
+  monitor_all dbschema ctxt logfile

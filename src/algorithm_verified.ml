@@ -22,8 +22,8 @@ module Monitor = struct
         exit 1
       end
 
-  let tuple ctxt s sl =
-    ctxt.cur_db <- Verified_adapter.insert_into_db s sl ctxt.cur_db
+  let tuple ctxt s tl =
+    ctxt.cur_db <- Verified_adapter.insert_into_db s tl ctxt.cur_db
 
   let end_tp ctxt =
     let db = ctxt.cur_db in
@@ -57,7 +57,7 @@ module Monitor = struct
 end
 
 module P = Log_parser.Make (Monitor)
-
+module S = Socket_input.Make (Monitor)
 
 let dump_formula dbschema f =
   let sf = convert_formula_serialize dbschema f in
@@ -83,4 +83,7 @@ let monitor dbschema logfile fv f =
     cur_db = Verified_adapter.empty_db;
     cur_state = Verified_adapter.init cf;
   } in
-  ignore (P.parse_file dbschema logfile ctxt)
+  if !Misc.socket_input then
+    ignore (P.parse_file dbschema logfile ctxt)
+  else
+    ignore (S.parse ctxt dbschema "cppmon")

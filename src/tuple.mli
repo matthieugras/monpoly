@@ -53,6 +53,7 @@ open MFOTL
 type tuple = cst list
   (** Tuples are currently implemented as lists of constants
       (see {!type:Predicate.cst}). *)
+type named_tuple = var * tuple
 
 val compare: tuple -> tuple -> int
   (** [compare x y] returns [0] if [x] is equal to [y], a negative

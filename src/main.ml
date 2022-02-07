@@ -196,6 +196,7 @@ let _ =
     "-unfold_let", Arg.Symbol (["no"; "full"; "smart"], set_unfold_let),
       "\tWhether and how LET expressions in the formula should be unfolded (default 'no')";
     "-strcache", Arg.Set Misc.str_cache, "\tUse string cache to reduce memory usage";
+    "-sockinp", Arg.Set Misc.socket_input, "\tRead events from socket";
   ]
     (fun _ -> ())
     usage_string;
