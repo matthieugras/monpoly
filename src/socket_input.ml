@@ -17,7 +17,13 @@ type server_state = {
   inp: in_channel;
   outp: out_channel;
   schema: Db.schema;
+  mutable num_events: int;
 }
+
+(* 
+   ASSUMPTIONS: On this machine (in the C toolchain): int is 32 bits, double is IEEE 64 bits
+   WARNING: If these assumptions are not met, the code below will horribly fail
+*)
 
 type cmd = NEW_EVENT | NEW_DATABASE | END_DATABASE | LATENCY_MARKER | EOF
 
@@ -83,10 +89,13 @@ let read_tuple st =
   let pred_name = read_string st in
   let arity = Int32.to_int (read_int st) in
   assert (arity > 0);
-  match List.assq_opt pred_name (!st.schema) with
+  match List.assoc_opt pred_name (!st.schema) with
   | Some (tys) ->
     assert (arity = List.length tys);
-    pred_name, List.map (fun (_, ty) -> read_tuple_element st ty) tys
+    !st.num_events <- (!st.num_events) + 1;
+    let tup = List.map (fun (_, ty) -> read_tuple_element st ty) tys in
+    (* Printf.printf "new tuple with name %s: %s\n" pred_name (Tuple.string_of_tuple tup); *)
+    pred_name, tup
   | None -> failwith (Printf.sprintf "unknown predicate %s" pred_name)
 
 let read_cmd st =
@@ -106,8 +115,7 @@ module Make(C: Consumer) = struct
 
   let send_eof ctx st =
     write_cmd st EOF;
-    flush (!st.outp);
-    C.end_log ctx
+    flush (!st.outp)
 
   let rec read_tuple_list ctx st =
     match read_cmd st with
@@ -124,6 +132,7 @@ module Make(C: Consumer) = struct
       send_eof ctx st
     | NEW_DATABASE -> 
       let ts = Z.of_int64 (read_int64 st) in
+      (* Printf.printf "New db with ts %d\n" (Z.to_int ts); *)
       C.begin_tp ctx ts;
       read_tuple_list ctx st;
       srv_loop ctx st
@@ -134,11 +143,22 @@ module Make(C: Consumer) = struct
     | _ -> failwith "expected EOF|NEW_DATABASE|LATENCY_MARKER"
 
   let run_srv ctx schema inp outp =
-    let st = ref {schema; inp; outp;} in
+    let st = ref {schema; inp; outp; num_events = 0} in
     srv_loop ctx st
+  (* Printf.printf "received a total of %d events" (!st.num_events) *)
 
   let parse (ctx: C.t) (schema: Db.schema) (sock_path: string) = 
     let addr = ADDR_UNIX sock_path in
-    establish_server (run_srv ctx schema) addr;
+    let sock = socket PF_UNIX SOCK_STREAM 0 in
+    bind sock addr;
+    listen sock 1;
+    let (fdpeer, _) = accept sock in
+    let (inp, outp) = (in_channel_of_descr fdpeer, out_channel_of_descr fdpeer) in
+    run_srv ctx schema inp outp;
+    shutdown fdpeer SHUTDOWN_SEND;
+    close_out outp;
+    close sock;
+    unlink sock_path;
+    C.end_log ctx;
     true
 end
