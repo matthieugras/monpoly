@@ -135,7 +135,6 @@ module Make(C: Consumer) = struct
       (* Printf.printf "New db with ts %d\n" (Z.to_int ts); *)
       C.begin_tp ctx ts;
       read_tuple_list ctx st;
-      C.end_tp ctx;
       srv_loop ctx st
     | LATENCY_MARKER ->
       let lm = read_int64 st in
