@@ -159,6 +159,8 @@ module Make(C: Consumer) = struct
     close_out outp;
     close sock;
     unlink sock_path;
-    C.end_log ctx;
+    (try
+       C.end_log ctx;
+     with Log_parser.Stop_parser -> ());
     true
 end
