@@ -84,6 +84,6 @@ let monitor dbschema logfile fv f =
     cur_state = Verified_adapter.init cf;
   } in
   if !Misc.socket_input then
-    ignore (P.parse_file dbschema logfile ctxt)
+    ignore (S.parse ctxt dbschema logfile)
   else
-    ignore (S.parse ctxt dbschema "cppmon")
+    ignore (P.parse_file dbschema logfile ctxt)
