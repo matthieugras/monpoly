@@ -9,3 +9,5 @@ _build
 .DS_Store
 .vscode
 libmonpoly.install
+
+tags
