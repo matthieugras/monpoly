@@ -78,3 +78,7 @@ val check_syntax: schema -> formula -> ((var * tcst) list  * formula)
 val check_let: formula -> bool
 
 val expand_let: expand_mode -> formula -> formula
+
+val elim_syntactic_sugar: formula -> formula
+
+val is_and_relop: formula -> bool

@@ -46,6 +46,7 @@ open Formula_parser
 open Lexing
 open Algorithm
 open Rewriting
+open Explicitmon
 
 let usage_string =
   "Usage: monpoly -sig <file> -formula <file> [-negate] [-log <file>]
@@ -141,6 +142,9 @@ let main () =
         let sign = Log_parser.parse_signature_file !sigfile in
         let _ = if is_mfodl f then Misc.verified := true else () in
 
+        if !Explicitmon.explicit_mon_output then
+          Misc.verified := false;
+
         let is_mon, pf, vartypes = check_formula sign f in
         let fv = List.map fst vartypes in
         if !sigout then
@@ -151,7 +155,9 @@ let main () =
               Filter_rel.enable pf;
             if not !nofilteremptytpopt && not !Misc.verified then
               Filter_empty_tp.enable pf;
-            if !Algorithm.resumefile <> "" then
+            if !Explicitmon.explicit_mon_output then
+              Explicitmon.write_explicitmon_state sign pf
+            else if !Algorithm.resumefile <> "" then
               Algorithm.resume sign !logfile
             else if !Algorithm.combine_files <> "" then
               Algorithm.combine sign !logfile
@@ -170,6 +176,7 @@ let set_unfold_let = function
 
 let _ =
   Arg.parse [
+    "-explicitmon", Arg.Set Explicitmon.explicit_mon_output, "\t\tExplicit monitoring";
     "-sig", Arg.Set_string sigfile, "\t\tChoose the signature file";
     "-formula", Arg.Set_string formulafile, "\tChoose the formula file";
     "-negate", Arg.Set negate, "\tAnalyze the negation of the input formula";
