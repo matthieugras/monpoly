@@ -340,11 +340,15 @@ type printable = Printable : ('a * (cst_map -> 'a -> cst_map)) -> printable
 let print_printable cmap (Printable (p, pfn)) = pfn cmap p
 
 let print_zint_cst cmap i =
-  printf "mp_long<%s>" (Z.to_string i);
+  printf "mp_int64_t<%s>" (Z.to_string i);
   cmap
 
-let print_int_cst cmap i =
-  printf "mp_long<%d>" i;
+let print_bool_cst cmap b =
+  printf "mp_bool<%B>" b;
+  cmap
+
+let print_size_t_cst cmap i =
+  printf "mp_size_t<%d>" i;
   cmap
 
 let print_string_cst cmap s =
@@ -385,7 +389,7 @@ let print_template cmap name pbody =
 
 let print_ty cmap ty =
   (match ty with
-  | TInt -> print_string "int64_t"
+  | TInt -> print_string "std::int64_t"
   | TStr -> print_string "std::string"
   | TFloat -> print_string "double"
   | _ -> failwith "regex not supported");
@@ -402,14 +406,10 @@ let rec print_pred_arg cmap arg =
   | PVar (ty, id) ->
       print_template cmap "pvar" (fun cmap ->
           print_printable_list cmap
-            [ Printable (ty, print_ty); Printable (id, print_int_cst) ])
+            [ Printable (ty, print_ty); Printable (id, print_size_t_cst) ])
   | PCst cst ->
       print_template cmap "pcst" (fun cmap ->
           print_printable_list cmap [ Printable (cst, print_cst) ])
-
-let print_pred_args cmap args =
-  print_template cmap "pred_args" (fun cmap ->
-      print_list cmap args print_pred_arg)
 
 let print_templ_ps_l cmap name ps =
   print_template cmap name (fun cmap -> print_printable_list cmap ps)
@@ -417,13 +417,9 @@ let print_templ_ps_l cmap name ps =
 let print_templ_l cmap name l pfn =
   print_template cmap name (fun cmap -> print_list cmap l pfn)
 
-let print_bool cmap b =
-  Format.print_bool b;
-  cmap
-
 let print_jtype cmap = function
-  | NatJoin -> print_bool cmap true
-  | AntiJoin -> print_bool cmap false
+  | NatJoin -> print_bool_cst cmap true
+  | AntiJoin -> print_bool_cst cmap false
 
 let print_bound cmap = function
   | Bnd i -> print_zint_cst cmap i
@@ -432,7 +428,7 @@ let print_bound cmap = function
       cmap
 
 let rec print_term cmap = function
-  | TVar id -> print_template cmap "tvar" (fun cmap -> print_int_cst cmap id)
+  | TVar id -> print_template cmap "tvar" (fun cmap -> print_size_t_cst cmap id)
   | TCst cst -> print_template cmap "tcst" (fun cmap -> print_cst cmap cst)
   | F2i t -> print_rec_term cmap "tf2i" [ t ]
   | I2f t -> print_rec_term cmap "ti2f" [ t ]
@@ -453,13 +449,13 @@ let print_cst_ty cmap ty =
   cmap
 
 let print_cst_neg cmap = function
-  | Negated -> print_bool cmap true
-  | Normal -> print_bool cmap false
+  | Negated -> print_bool_cst cmap true
+  | Normal -> print_bool_cst cmap false
 
 let print_sop cmap = function
   | MAndAssign (res_var, t) ->
       print_templ_ps_l cmap "mandassign"
-        [ Printable (res_var, print_int_cst); Printable (t, print_term) ]
+        [ Printable (res_var, print_size_t_cst); Printable (t, print_term) ]
   | MAndRel (is_neg, ty, t1, t2) ->
       print_templ_ps_l cmap "mandrel"
         [
@@ -468,14 +464,15 @@ let print_sop cmap = function
           Printable (t1, print_term);
           Printable (t2, print_term);
         ]
-  | MExists vars -> print_templ_l cmap "mexists" vars print_int_cst
+  | MExists vars -> print_templ_l cmap "mexists" vars print_size_t_cst
 
 let print_sops cmap sops = print_templ_l cmap "simpleops" sops print_sop
 
 let rec print_exformula cmap = function
   | MPredicate (id, args) ->
       print_templ_ps_l cmap "mpredicate"
-        [ Printable (id, print_int_cst); Printable (args, print_pred_args) ]
+        (Printable (id, print_size_t_cst)
+        :: map (fun arg -> Printable (arg, print_pred_arg)) args)
   | MTp arg -> print_templ_ps_l cmap "mtp" [ Printable (arg, print_pred_arg) ]
   | MTs arg -> print_templ_ps_l cmap "mts" [ Printable (arg, print_pred_arg) ]
   | MTpts (arg1, arg2) ->
@@ -513,23 +510,34 @@ and print_temp_op cmap name bnds rterms =
   print_templ_ps_l cmap name (concat [ bnd_prints; rec_prints ])
 
 let print_cst_struct sty sname scst =
-  printf "struct %s {\nstatic constexpr %s = %s;\n};\n" sname sty scst
+  printf
+    "struct %s {\nusing value_type = %s;\nstatic constexpr %s value = %s;\n};\n"
+    sname sty sty scst
 
 let print_cst_struct_list sty arg =
   let snames, scst = split arg in
   iter2 (print_cst_struct sty) snames scst
 
 let print_exformula_csts cmap =
-  print_cst_struct_list "std::string"
-    (map (fun (a, b) -> (a, "\"" ^ b ^ "\"")) cmap.scstmap);
+  print_cst_struct_list "std::string_view"
+    (map (fun (a, b) -> (a, "\"" ^ b ^ "\"sv")) cmap.scstmap);
   print_cst_struct_list "double"
     (map (fun (a, b) -> (a, Float.to_string b)) cmap.fcstmap)
 
-let cpp_of_exformula f = 
-  let cmap = print_exformula {scstmap = []; fcstmap = []} f in
-  print_newline ();
-  print_exformula_csts cmap
+let with_open_out_chan s f =
+  let chan = open_out s in
+  Fun.protect ~finally:(fun _ -> close_out chan) (fun _ -> f chan)
 
-let write_explicitmon_state (schema: Db.schema) (f: MFOTL.formula) =
+let cpp_of_exformula f =
+  with_open_out_chan "formula_in.h" (fun chan ->
+      set_formatter_out_channel chan;
+      let cmap = print_exformula { scstmap = []; fcstmap = [] } f in
+      print_newline ();
+      with_open_out_chan "formula_csts.h" (fun chan ->
+          set_formatter_out_channel chan;
+          print_exformula_csts cmap;
+          print_newline ()))
+
+let write_explicitmon_state (schema : Db.schema) (f : MFOTL.formula) =
   let f = make_exformula schema f in
   cpp_of_exformula f
