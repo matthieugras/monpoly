@@ -63,7 +63,6 @@ type translation_ctx = {
 }
 
 type cst_type = CstEq | CstLess | CstLessEq
-type cst_neg = Negated | Normal
 type join_type = NatJoin | AntiJoin
 
 type term =
@@ -80,7 +79,7 @@ type term =
 
 type simple_op =
   | MAndAssign of var_id * term
-  | MAndRel of cst_neg * cst_type * term * term
+  | MAndRel of bool * cst_type * term * term
   | MExists of var_id list
 
 type predarg = PVar of tcst * var_id | PCst of cst
@@ -97,12 +96,10 @@ type exformula =
   | MNeg of exformula
   | MPrev of interval * exformula
   | MNext of interval * exformula
-  | MOnceB of interval * exformula
-  | MOnceU of tsdiff * exformula
-  | MSinceB of interval * exformula * exformula
-  | MSinceU of tsdiff * exformula * exformula
+  | MOnce of interval * exformula
+  | MSince of bool * interval * exformula * exformula
   | MFusedSimpleOp of simple_op list * exformula
-  | MUntil of interval * exformula * exformula
+  | MUntil of bool * interval * exformula * exformula
   | MEventually of interval * exformula
 
 let translate_bnd = function
@@ -111,12 +108,6 @@ let translate_bnd = function
   | MFOTL.Inf -> Inf
 
 let translate_intv (a, b) = (translate_bnd a, translate_bnd b)
-let is_inf_intv = function _, Inf -> true | _ -> false
-
-let if_unbounded = function
-  | Bnd a, Inf -> Some a
-  | Bnd a, Bnd b -> None
-  | _ -> failwith "malformed"
 
 let create_new_id =
   incr curr_id;
@@ -185,12 +176,12 @@ let is_special_and f1 f2 =
   is_and_relop f2 && is_special_case fv1 f2
 
 let rec is_safe_assignment f1 f2 =
-  let fv2 = String_set.of_list (MFOTL.free_vars f2) in
+  let fv1 = String_set.of_list (MFOTL.free_vars f1) in
   match f2 with
-  | Equal (Var a, Var b) -> String_set.mem a fv2 == String_set.mem b fv2
+  | Equal (Var a, Var b) -> String_set.mem a fv1 == not (String_set.mem b fv1)
   | Equal (Var a, t) ->
-      (not (String_set.mem a fv2))
-      && String_set.subset (String_set.of_list (Predicate.tvars t)) fv2
+      (not (String_set.mem a fv1))
+      && String_set.subset (String_set.of_list (Predicate.tvars t)) fv1
   | Equal (t, Var b) -> is_safe_assignment f1 (Equal (Var b, t))
   | _ -> false
 
@@ -207,28 +198,27 @@ let rec translate_formula ctx = function
   | Once (intv, f) ->
       let f, ctx = translate_formula ctx f in
       let intv = translate_intv intv in
-      let f =
-        match if_unbounded intv with
-        | Some k -> MOnceU (k, f)
-        | None -> MOnceB (intv, f)
-      in
-      (f, ctx)
+      (MOnce (intv, f), ctx)
   | Eventually (intv, f) ->
       let f, ctx = translate_formula ctx f in
       let intv = translate_intv intv in
       (MEventually (intv, f), ctx)
+  | Since (intv, Neg f1, f2) ->
+      let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
+      let intv = translate_intv intv in
+      (MSince (true, intv, f1, f2), ctx)
   | Since (intv, f1, f2) ->
       let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
       let intv = translate_intv intv in
-      let f =
-        match if_unbounded intv with
-        | Some k -> MSinceU (k, f1, f2)
-        | None -> MSinceB (intv, f1, f2)
-      in
-      (f, ctx)
+      (MSince (false, intv, f1, f2), ctx)
+  | Until (intv, Neg f1, f2) ->
+      let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
+      let intv = translate_intv intv in
+      (MUntil (true, intv, f1, f2), ctx)
   | Until (intv, f1, f2) ->
       let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
-      (MUntil (translate_intv intv, f1, f2), ctx)
+      let intv = translate_intv intv in
+      (MUntil (false, intv, f1, f2), ctx)
   | Or (f1, f2) ->
       let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
       (MOr (f1, f2), ctx)
@@ -281,22 +271,22 @@ and translate_constraint ctx sops f1 f2 =
     match f2 with
     | Equal (t1, t2) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Normal, CstEq, t1, t2))
+        (ctx, MAndRel (false, CstEq, t1, t2))
     | LessEq (t1, t2) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Normal, CstLessEq, t1, t2))
+        (ctx, MAndRel (false, CstLessEq, t1, t2))
     | Less (t1, t2) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Normal, CstLess, t1, t2))
+        (ctx, MAndRel (false, CstLess, t1, t2))
     | Neg (Equal (t1, t2)) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Negated, CstEq, t1, t2))
+        (ctx, MAndRel (true, CstEq, t1, t2))
     | Neg (LessEq (t1, t2)) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Normal, CstLessEq, t1, t2))
+        (ctx, MAndRel (true, CstLessEq, t1, t2))
     | Neg (Less (t1, t2)) ->
         let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
-        (ctx, MAndRel (Negated, CstLess, t1, t2))
+        (ctx, MAndRel (true, CstLess, t1, t2))
     | _ -> failwith "not a constraint"
   in
   transform_fused_op ctx (sop :: sops) f1
@@ -316,13 +306,15 @@ and transform_fused_op ctx sops = function
       translate_constraint ctx sops f1 f2
   | f ->
       let f, ctx = translate_formula ctx f in
-      (MFusedSimpleOp (List.rev sops, f), ctx)
+      (MFusedSimpleOp (sops, f), ctx)
 
-let make_exformula schema f =
+let make_exformula schema f fvs =
   (* normalize the formula *)
   let f = Rewriting.elim_syntactic_sugar f in
   let init_ctx = { schema; pmap = Pred_map.empty; vmap = Var_map.empty } in
-  fst (translate_formula init_ctx f)
+  let f, ctx = translate_formula init_ctx f in
+  let fvs = map (fun v -> Var_map.find v ctx.vmap) fvs in
+  (fvs, f)
 
 type cst_map = {
   scstmap : (string * string) list;
@@ -343,8 +335,12 @@ let print_zint_cst cmap i =
   printf "mp_int64_t<%s>" (Z.to_string i);
   cmap
 
-let print_bool_cst cmap b =
-  printf "mp_bool<%B>" b;
+(* let print_bool_cst cmap b = *)
+(*   printf "mp_bool<%B>" b; *)
+(*   cmap *)
+
+let print_bool cmap b =
+  printf "%B" b;
   cmap
 
 let print_size_t_cst cmap i =
@@ -418,8 +414,8 @@ let print_templ_l cmap name l pfn =
   print_template cmap name (fun cmap -> print_list cmap l pfn)
 
 let print_jtype cmap = function
-  | NatJoin -> print_bool_cst cmap true
-  | AntiJoin -> print_bool_cst cmap false
+  | NatJoin -> print_bool cmap false
+  | AntiJoin -> print_bool cmap true
 
 let print_bound cmap = function
   | Bnd i -> print_zint_cst cmap i
@@ -448,10 +444,6 @@ let print_cst_ty cmap ty =
   | CstLessEq -> print_string "cst_less_eq");
   cmap
 
-let print_cst_neg cmap = function
-  | Negated -> print_bool_cst cmap true
-  | Normal -> print_bool_cst cmap false
-
 let print_sop cmap = function
   | MAndAssign (res_var, t) ->
       print_templ_ps_l cmap "mandassign"
@@ -459,7 +451,7 @@ let print_sop cmap = function
   | MAndRel (is_neg, ty, t1, t2) ->
       print_templ_ps_l cmap "mandrel"
         [
-          Printable (is_neg, print_cst_neg);
+          Printable (is_neg, print_bool);
           Printable (ty, print_cst_ty);
           Printable (t1, print_term);
           Printable (t2, print_term);
@@ -468,46 +460,52 @@ let print_sop cmap = function
 
 let print_sops cmap sops = print_templ_l cmap "simpleops" sops print_sop
 
-let rec print_exformula cmap = function
-  | MPredicate (id, args) ->
-      print_templ_ps_l cmap "mpredicate"
-        (Printable (id, print_size_t_cst)
-        :: map (fun arg -> Printable (arg, print_pred_arg)) args)
-  | MTp arg -> print_templ_ps_l cmap "mtp" [ Printable (arg, print_pred_arg) ]
-  | MTs arg -> print_templ_ps_l cmap "mts" [ Printable (arg, print_pred_arg) ]
-  | MTpts (arg1, arg2) ->
-      print_templ_ps_l cmap "mtpts"
-        [ Printable (arg1, print_pred_arg); Printable (arg2, print_pred_arg) ]
-  | MAnd (jty, f1, f2) ->
-      print_templ_ps_l cmap "mand"
-        [
-          Printable (jty, print_jtype);
-          Printable (f1, print_exformula);
-          Printable (f2, print_exformula);
-        ]
-  | MOr (f1, f2) ->
-      print_templ_ps_l cmap "mor"
-        [ Printable (f1, print_exformula); Printable (f2, print_exformula) ]
-  | MNeg f -> print_templ_ps_l cmap "mneg" [ Printable (f, print_exformula) ]
-  | MPrev ((lb, ub), f) -> print_temp_op cmap "mprev" [ lb; ub ] [ f ]
-  | MNext ((lb, ub), f) -> print_temp_op cmap "mnext" [ lb; ub ] [ f ]
-  | MOnceB ((lb, ub), f) -> print_temp_op cmap "monceb" [ lb; ub ] [ f ]
-  | MOnceU (b, f) -> print_temp_op cmap "monceu" [ Bnd b ] [ f ]
-  | MSinceB ((lb, ub), f1, f2) ->
-      print_temp_op cmap "msinceb" [ lb; ub ] [ f1; f2 ]
-  | MSinceU (b, f1, f2) -> print_temp_op cmap "msinceu" [ Bnd b ] [ f1; f2 ]
-  | MUntil ((lb, ub), f1, f2) ->
-      print_temp_op cmap "muntil" [ lb; ub ] [ f1; f2 ]
-  | MEventually ((lb, ub), f) ->
-      print_temp_op cmap "meventually" [ lb; ub ] [ f ]
-  | MFusedSimpleOp (sops, f) ->
-      print_templ_ps_l cmap "mfusedsimpleop"
-        [ Printable (sops, print_sops); Printable (f, print_exformula) ]
-
-and print_temp_op cmap name bnds rterms =
-  let bnd_prints = map (fun b -> Printable (b, print_bound)) bnds in
-  let rec_prints = map (fun r -> Printable (r, print_exformula)) rterms in
-  print_templ_ps_l cmap name (concat [ bnd_prints; rec_prints ])
+let print_exformula f =
+  let rec go cmap f =
+    match f with
+    | MPredicate (id, args) ->
+        print_templ_ps_l cmap "mpredicate"
+          (Printable (id, print_size_t_cst)
+          :: map (fun arg -> Printable (arg, print_pred_arg)) args)
+    | MTp arg -> print_templ_ps_l cmap "mtp" [ Printable (arg, print_pred_arg) ]
+    | MTs arg -> print_templ_ps_l cmap "mts" [ Printable (arg, print_pred_arg) ]
+    | MTpts (arg1, arg2) ->
+        print_templ_ps_l cmap "mtpts"
+          [ Printable (arg1, print_pred_arg); Printable (arg2, print_pred_arg) ]
+    | MAnd (jty, f1, f2) ->
+        print_templ_ps_l cmap "mand"
+          [
+            Printable (jty, print_jtype); Printable (f1, go); Printable (f2, go);
+          ]
+    | MOr (f1, f2) ->
+        print_templ_ps_l cmap "mor" [ Printable (f1, go); Printable (f2, go) ]
+    | MNeg f -> print_templ_ps_l cmap "mneg" [ Printable (f, go) ]
+    | MPrev (intv, f) -> print_temp_op cmap "mprev" [] intv [ f ]
+    | MNext (intv, f) -> print_temp_op cmap "mnext" [] intv [ f ]
+    | MOnce (intv, f) -> print_temp_op cmap "monce" [] intv [ f ]
+    | MSince (is_neg, intv, f1, f2) ->
+        print_temp_op cmap "msince"
+          [ Printable (is_neg, print_bool) ]
+          intv [ f1; f2 ]
+    | MUntil (is_neg, intv, f1, f2) ->
+        print_temp_op cmap "muntil"
+          [ Printable (is_neg, print_bool) ]
+          intv [ f1; f2 ]
+    | MEventually (intv, f) -> print_temp_op cmap "meventually" [] intv [ f ]
+    | MFusedSimpleOp (sops, f) ->
+        print_templ_ps_l cmap "mfusedsimpleop"
+          [ Printable (sops, print_sops); Printable (f, go) ]
+  and print_temp_op cmap name ps (lb, ub) rterms =
+    let bnd_prints = map (fun b -> Printable (b, print_bound)) [ lb; ub ] in
+    let rec_prints = map (fun r -> Printable (r, go)) rterms in
+    print_templ_ps_l cmap name (concat [ ps; bnd_prints; rec_prints ])
+  in
+  print_string "using input_formula =";
+  print_break 1 1;
+  let cmap = go { scstmap = []; fcstmap = [] } f in
+  print_string ";";
+  print_newline ();
+  cmap
 
 let print_cst_struct sty sname scst =
   printf
@@ -524,20 +522,32 @@ let print_exformula_csts cmap =
   print_cst_struct_list "double"
     (map (fun (a, b) -> (a, Float.to_string b)) cmap.fcstmap)
 
+let print_fvs fvs =
+  print_string "using free_variables =";
+  print_break 1 1;
+  open_box 1;
+  let cmap = { scstmap = []; fcstmap = [] } in
+  let _ =
+    print_templ_ps_l cmap "mp_list"
+      (map (fun fv -> Printable (fv, print_size_t_cst)) fvs)
+  in
+  print_string ";";
+  print_newline ()
+
 let with_open_out_chan s f =
   let chan = open_out s in
   Fun.protect ~finally:(fun _ -> close_out chan) (fun _ -> f chan)
 
-let cpp_of_exformula f =
+let cpp_of_exformula f fvs =
   with_open_out_chan "formula_in.h" (fun chan ->
       set_formatter_out_channel chan;
-      let cmap = print_exformula { scstmap = []; fcstmap = [] } f in
-      print_newline ();
+      let cmap = print_exformula f in
+      print_fvs fvs;
       with_open_out_chan "formula_csts.h" (fun chan ->
           set_formatter_out_channel chan;
           print_exformula_csts cmap;
           print_newline ()))
 
-let write_explicitmon_state (schema : Db.schema) (f : MFOTL.formula) =
-  let f = make_exformula schema f in
-  cpp_of_exformula f
+let write_explicitmon_state schema f fvs =
+  let fvs, f = make_exformula schema f fvs in
+  cpp_of_exformula f fvs

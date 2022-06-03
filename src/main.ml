@@ -156,7 +156,7 @@ let main () =
             if not !nofilteremptytpopt && not !Misc.verified then
               Filter_empty_tp.enable pf;
             if !Explicitmon.explicit_mon_output then
-              Explicitmon.write_explicitmon_state sign pf
+              Explicitmon.write_explicitmon_state sign pf fv
             else if !Algorithm.resumefile <> "" then
               Algorithm.resume sign !logfile
             else if !Algorithm.combine_files <> "" then
