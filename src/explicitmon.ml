@@ -50,6 +50,7 @@ module Str_int_pair = struct
 end
 
 module Pred_map = New_id (Map.Make (Str_int_pair))
+module Pred_ty_map = Map.Make (Int)
 module Var_map = New_id (Map.Make (String))
 module String_set = Set.Make (String)
 
@@ -59,6 +60,7 @@ type pred_id = int
 type translation_ctx = {
   schema : Db.schema;
   pmap : pred_id Pred_map.t;
+  ptymap : tcst list Pred_ty_map.t;
   vmap : var_id Var_map.t;
 }
 
@@ -143,33 +145,34 @@ and translate_two_terms ctx t1 t2 =
 
 let translate_pred_args schema_entry vmap terms =
   let module P = Predicate in
-  let vmap, ret, _ =
-    List.fold_left
-      (fun (vmap, trsfd, idx) t ->
+  let vmap, pargs, ptys =
+    List.fold_left2
+      (fun (vmap, trsfd, ptys) t (_, ty) ->
         match t with
         | P.Var name ->
             let vmap, new_id = Var_map.maybe_make_new vmap name in
-            let ty = snd (nth schema_entry idx) in
             let trsfd = PVar (ty, new_id) :: trsfd in
-            (vmap, trsfd, idx + 1)
-        | P.Cst cst -> (vmap, PCst cst :: trsfd, idx + 1)
+            (vmap, trsfd, ty :: ptys)
+        | P.Cst (P.Int _ as cst) -> (vmap, PCst cst :: trsfd, TInt :: ptys)
+        | P.Cst (P.Str _ as cst) -> (vmap, PCst cst :: trsfd, TStr :: ptys)
+        | P.Cst (P.Float _ as cst) -> (vmap, PCst cst :: trsfd, TFloat :: ptys)
         | _ -> failwith "unsupported predicate arg")
-      (vmap, [], 0) terms
+      (vmap, [], []) terms schema_entry
   in
-  (vmap, List.rev ret)
+  (vmap, List.rev pargs, List.rev ptys)
 
 let translate_pred ctx name arity terms =
-  let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
-  let vmap, trsfd =
+  let vmap, trsfd, ptys =
     translate_pred_args (List.assoc name ctx.schema) ctx.vmap terms
   in
-  let generic_pred =
-    if name == "tp" && arity == 1 then MTp (nth trsfd 0)
-    else if name = "ts" && arity == 1 then MTs (nth trsfd 0)
-    else if name = "tpts" && arity == 2 then MTpts (nth trsfd 0, nth trsfd 1)
-    else MPredicate (new_id, trsfd)
-  in
-  (generic_pred, { ctx with pmap; vmap })
+  if name == "tp" && arity == 1 then (MTp (nth trsfd 0), { ctx with vmap })
+  else if name = "ts" && arity == 1 then (MTs (nth trsfd 0), { ctx with vmap })
+  else if name = "tpts" && arity == 2 then
+    (MTpts (nth trsfd 0, nth trsfd 1), { ctx with vmap })
+  else
+    let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
+    let ptymap = Pred_ty_map.add new_id ptys ctx.ptymap in
+    (MPredicate (new_id, trsfd), { ctx with vmap; pmap; ptymap })
 
 let is_special_and f1 f2 =
   let fv1 = MFOTL.free_vars f1 in
@@ -308,13 +311,29 @@ and transform_fused_op ctx sops = function
       let f, ctx = translate_formula ctx f in
       (MFusedSimpleOp (sops, f), ctx)
 
+let join_ps_and_pty pmap ptymap =
+  Pred_map.fold
+    (fun (name, arity) id preds ->
+      (* Printf.printf "predicate with name %s and arity %d" name arity; *)
+      let tys = Pred_ty_map.find id ptymap in
+      (name, arity, id, tys) :: preds)
+    pmap []
+
 let make_exformula schema f fvs =
   (* normalize the formula *)
   let f = Rewriting.elim_syntactic_sugar f in
-  let init_ctx = { schema; pmap = Pred_map.empty; vmap = Var_map.empty } in
+  let init_ctx =
+    {
+      schema;
+      ptymap = Pred_ty_map.empty;
+      pmap = Pred_map.empty;
+      vmap = Var_map.empty;
+    }
+  in
   let f, ctx = translate_formula init_ctx f in
   let fvs = map (fun v -> Var_map.find v ctx.vmap) fvs in
-  (fvs, f)
+  let preds = join_ps_and_pty ctx.pmap ctx.ptymap in
+  (fvs, preds, f)
 
 type cst_map = {
   scstmap : (string * string) list;
@@ -327,17 +346,14 @@ let get_new_cst_id =
   incr cst_id;
   !cst_id
 
-type printable = Printable : ('a * (cst_map -> 'a -> cst_map)) -> printable
+(* here b is the print context *)
+type 'b printable = Printable : ('a * ('b -> 'a -> 'b)) -> 'b printable
 
 let print_printable cmap (Printable (p, pfn)) = pfn cmap p
 
 let print_zint_cst cmap i =
   printf "mp_int64_t<%s>" (Z.to_string i);
   cmap
-
-(* let print_bool_cst cmap b = *)
-(*   printf "mp_bool<%B>" b; *)
-(*   cmap *)
 
 let print_bool cmap b =
   printf "%B" b;
@@ -367,17 +383,19 @@ let rec print_printable_list cmap ps =
   | [ p ] -> print_printable cmap p
   | [] -> cmap
 
-let rec print_list cmap l pfn =
+let print_list cmap l pfn =
   let ps = map (fun e -> Printable (e, pfn)) l in
   print_printable_list cmap ps
 
-let print_template_body cmap pbody =
-  print_string "<";
-  open_box 1;
-  let cmap = pbody cmap in
+let print_enclosed cmap sepo sepc body =
+  print_string sepo;
+  open_box 2;
+  let cmap = body cmap in
   close_box ();
-  print_string ">";
+  print_string sepc;
   cmap
+
+let print_template_body cmap pbody = print_enclosed cmap "<" ">" pbody
 
 let print_template cmap name pbody =
   print_string name;
@@ -388,6 +406,14 @@ let print_ty cmap ty =
   | TInt -> print_string "std::int64_t"
   | TStr -> print_string "std::string"
   | TFloat -> print_string "double"
+  | _ -> failwith "regex not supported");
+  cmap
+
+let print_arg_ty cmap ty =
+  (match ty with
+  | TInt -> print_string "INT_TYPE"
+  | TStr -> print_string "STRING_TYPE"
+  | TFloat -> print_string "FLOAT_TYPE"
   | _ -> failwith "regex not supported");
   cmap
 
@@ -460,6 +486,15 @@ let print_sop cmap = function
 
 let print_sops cmap sops = print_templ_l cmap "simpleops" sops print_sop
 
+let print_assignment cmap lhs_s rhs_p =
+  print_string lhs_s;
+  print_string " ";
+  print_string "=";
+  print_break 1 2;
+  let cmap = print_printable cmap rhs_p in
+  print_string ";";
+  cmap
+
 let print_exformula f =
   let rec go cmap f =
     match f with
@@ -500,10 +535,12 @@ let print_exformula f =
     let rec_prints = map (fun r -> Printable (r, go)) rterms in
     print_templ_ps_l cmap name (concat [ ps; bnd_prints; rec_prints ])
   in
-  print_string "using input_formula =";
-  print_break 1 1;
-  let cmap = go { scstmap = []; fcstmap = [] } f in
-  print_string ";";
+  let cmap =
+    print_assignment
+      { scstmap = []; fcstmap = [] }
+      "using input_formula"
+      (Printable (f, go))
+  in
   print_newline ();
   cmap
 
@@ -523,31 +560,79 @@ let print_exformula_csts cmap =
     (map (fun (a, b) -> (a, Float.to_string b)) cmap.fcstmap)
 
 let print_fvs fvs =
-  print_string "using free_variables =";
-  print_break 1 1;
-  open_box 1;
-  let cmap = { scstmap = []; fcstmap = [] } in
-  let _ =
-    print_templ_ps_l cmap "mp_list"
-      (map (fun fv -> Printable (fv, print_size_t_cst)) fvs)
-  in
-  print_string ";";
+  print_assignment () "using free_variables"
+    (Printable
+       ( fvs,
+         fun _ fvs ->
+           print_templ_ps_l () "mp_list"
+             (map (fun fv -> Printable (fv, print_size_t_cst)) fvs) ));
   print_newline ()
 
 let with_open_out_chan s f =
   let chan = open_out s in
   Fun.protect ~finally:(fun _ -> close_out chan) (fun _ -> f chan)
 
-let cpp_of_exformula f fvs =
+let print_braced_list ps =
+  print_enclosed () "{" "}" (fun _ -> print_printable_list () ps)
+
+let print_name_arity_tup (name, arity) =
+  print_braced_list
+    [
+      Printable (name, fun _ name -> print_string name);
+      Printable (arity, fun _ arity -> print_int arity);
+    ]
+
+let print_id_tys_pair (id, tys) =
+  print_enclosed () "{" "}" (fun _ ->
+      let ps = [ Printable (id, fun _ id -> print_int id) ] in
+      print_printable_list () ps)
+
+let print_pred cmap (name, arity, id, tys) =
+  print_braced_list
+    [
+      Printable
+        ( (name, arity),
+          fun _ (name, arity) ->
+            print_braced_list
+              [
+                Printable (name, fun _ name -> print_string ("\"" ^ name ^ "\""));
+                Printable (arity, fun _ arity -> print_int arity);
+              ] );
+      Printable
+        ( (id, tys),
+          fun _ (id, tys) ->
+            print_braced_list
+              [
+                Printable (id, fun _ id -> print_int id);
+                Printable
+                  ( tys,
+                    fun _ tys ->
+                      print_braced_list
+                        (List.map (fun ty -> Printable (ty, print_arg_ty)) tys)
+                  );
+              ] );
+    ]
+
+let print_preds preds =
+  print_assignment () "inline static const pred_map_t"
+    (Printable
+       ( preds,
+         fun _ preds ->
+           let ps = List.map (fun pred -> Printable (pred, print_pred)) preds in
+           print_braced_list ps ));
+  print_newline ()
+
+let cpp_of_exformula f fvs preds =
   with_open_out_chan "formula_in.h" (fun chan ->
       set_formatter_out_channel chan;
       let cmap = print_exformula f in
       print_fvs fvs;
+      print_preds preds;
       with_open_out_chan "formula_csts.h" (fun chan ->
           set_formatter_out_channel chan;
           print_exformula_csts cmap;
           print_newline ()))
 
 let write_explicitmon_state schema f fvs =
-  let fvs, f = make_exformula schema f fvs in
-  cpp_of_exformula f fvs
+  let fvs, preds, f = make_exformula schema f fvs in
+  cpp_of_exformula f fvs preds
