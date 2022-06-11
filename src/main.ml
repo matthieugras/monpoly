@@ -177,6 +177,7 @@ let set_unfold_let = function
 let _ =
   Arg.parse [
     "-explicitmon", Arg.Set Explicitmon.explicit_mon_output, "\t\tExplicit monitoring";
+    "-explicitmon_prefix", Arg.Set_string Explicitmon.explicit_mon_prefix, "\t\tOutput for explicitmon";
     "-sig", Arg.Set_string sigfile, "\t\tChoose the signature file";
     "-formula", Arg.Set_string formulafile, "\tChoose the formula file";
     "-negate", Arg.Set negate, "\tAnalyze the negation of the input formula";

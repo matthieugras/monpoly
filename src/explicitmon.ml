@@ -10,6 +10,7 @@ open Db
 open Format
 
 let explicit_mon_output = ref false
+let explicit_mon_prefix = ref "."
 let curr_id = ref 0
 
 module New_id (M : Map.S) = struct
@@ -587,17 +588,10 @@ let print_id_tys_pair (id, tys) =
       let ps = [ Printable (id, fun _ id -> print_int id) ] in
       print_printable_list () ps)
 
-let print_pred cmap (name, arity, id, tys) =
+let print_pred cmap (name, _, id, tys) =
   print_braced_list
     [
-      Printable
-        ( (name, arity),
-          fun _ (name, arity) ->
-            print_braced_list
-              [
-                Printable (name, fun _ name -> print_string ("\"" ^ name ^ "\""));
-                Printable (arity, fun _ arity -> print_int arity);
-              ] );
+      Printable (name, fun _ name -> print_string ("\"" ^ name ^ "\""));
       Printable
         ( (id, tys),
           fun _ (id, tys) ->
@@ -614,7 +608,7 @@ let print_pred cmap (name, arity, id, tys) =
     ]
 
 let print_preds preds =
-  print_assignment () "inline static const pred_map_t"
+  print_assignment () "inline static const pred_map_t input_predicates"
     (Printable
        ( preds,
          fun _ preds ->
@@ -622,13 +616,15 @@ let print_preds preds =
            print_braced_list ps ));
   print_newline ()
 
+let add_prefix fname = !explicit_mon_prefix ^ "/" ^ fname
+
 let cpp_of_exformula f fvs preds =
-  with_open_out_chan "formula_in.h" (fun chan ->
+  with_open_out_chan (add_prefix "formula_in.h") (fun chan ->
       set_formatter_out_channel chan;
       let cmap = print_exformula f in
       print_fvs fvs;
       print_preds preds;
-      with_open_out_chan "formula_csts.h" (fun chan ->
+      with_open_out_chan (add_prefix "formula_csts.h") (fun chan ->
           set_formatter_out_channel chan;
           print_exformula_csts cmap;
           print_newline ()))
