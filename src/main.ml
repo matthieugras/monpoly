@@ -47,6 +47,7 @@ open Lexing
 open Algorithm
 open Rewriting
 open Explicitmon
+open Cppmon
 
 let usage_string =
   "Usage: monpoly -sig <file> -formula <file> [-negate] [-log <file>]
@@ -157,6 +158,8 @@ let main () =
               Filter_empty_tp.enable pf;
             if !Explicitmon.explicit_mon_output then
               Explicitmon.write_explicitmon_state sign pf fv
+            else if !Cppmon.output_cppmon then
+              print_cppmon_formula pf false
             else if !Algorithm.resumefile <> "" then
               Algorithm.resume sign !logfile
             else if !Algorithm.combine_files <> "" then
@@ -178,6 +181,7 @@ let _ =
   Arg.parse [
     "-explicitmon", Arg.Set Explicitmon.explicit_mon_output, "\t\tExplicit monitoring";
     "-explicitmon_prefix", Arg.Set_string Explicitmon.explicit_mon_prefix, "\t\tOutput for explicitmon";
+    "-cppmon", Arg.Set Cppmon.output_cppmon, "\t\tCppmon monitoring";
     "-sig", Arg.Set_string sigfile, "\t\tChoose the signature file";
     "-formula", Arg.Set_string formulafile, "\tChoose the formula file";
     "-negate", Arg.Set negate, "\tAnalyze the negation of the input formula";

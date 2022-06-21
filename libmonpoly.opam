@@ -8,6 +8,7 @@ bug-reports: "https://bitbucket.org/jshs/monpoly/issues"
 depends: [
   "dune" {>= "3.0"}
   "ocaml" {>= "4.13"}
+  "ppx_yojson_conv" {>= "0.15.0"}
   "zarith" {>= "1.11"}
   "odoc" {with-doc}
 ]

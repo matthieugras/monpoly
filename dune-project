@@ -15,6 +15,7 @@
   (synopsis "Library for the MonPoly and VeriMon monitoring tools")
   (depends
     (ocaml (>= 4.13))
+    (ppx_yojson_conv (>= 0.15.0))
     (zarith (>= 1.11))))
 
 (package
