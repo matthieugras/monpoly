@@ -58,6 +58,15 @@ module String_set = Set.Make (String)
 type var_id = int
 type pred_id = int
 
+let print_var_map vmap =
+  Printf.eprintf "[%s]"
+    (let slist =
+       map
+         (fun (name, id) -> Printf.sprintf "(%s -> %d)" name id)
+         (List.of_seq (Var_map.to_seq vmap))
+     in
+     String.concat ", " slist)
+
 type translation_ctx = {
   schema : Db.schema;
   pmap : pred_id Pred_map.t;
@@ -97,6 +106,8 @@ type exformula =
   | MAnd of join_type * exformula * exformula
   | MOr of exformula * exformula
   | MNeg of exformula
+  | MEq of term * term
+  | MEmptyRel
   | MPrev of interval * exformula
   | MNext of interval * exformula
   | MOnce of interval * exformula
@@ -226,6 +237,14 @@ let rec translate_formula ctx = function
   | Or (f1, f2) ->
       let ctx, f1, f2 = translate_two_seq ctx f1 f2 in
       (MOr (f1, f2), ctx)
+  | Equal (t1, t2) ->
+      let ctx, t1, t2 = translate_two_terms ctx t1 t2 in
+      (MEq (t1, t2), ctx)
+  | Neg (Equal (Var a, Var b)) when a = b -> (MEmptyRel, ctx)
+  | Neg f ->
+      let f, cmap = translate_formula ctx f in
+      (MNeg f, cmap)
+  (* fused op cases *)
   | Exists (_, _) as f -> transform_fused_op ctx [] f
   | And (f1, f2) as f when is_special_and f1 f2 ->
       (* possibly a fused op *)
@@ -297,11 +316,16 @@ and translate_constraint ctx sops f1 f2 =
 
 and transform_fused_op ctx sops = function
   | Exists (vars, f) ->
+      (* Printf.eprintf "before:\n"; *)
+      (* print_var_map ctx.vmap; *)
       let vmap, old_ids, new_ids = Var_map.make_new_mult ctx.vmap vars in
       let f, ctx =
         transform_fused_op { ctx with vmap } (MExists new_ids :: sops) f
       in
-      let vmap = Var_map.update_all vmap vars old_ids in
+      let vmap = Var_map.update_all ctx.vmap vars old_ids in
+      (* Printf.eprintf "after:\n"; *)
+      (* print_var_map vmap; *)
+      (* Printf *)
       (f, { ctx with vmap })
   | And (f1, (Equal (x, y) as f2))
     when is_special_and f1 f2 && is_safe_assignment f1 f2 ->
@@ -315,7 +339,6 @@ and transform_fused_op ctx sops = function
 let join_ps_and_pty pmap ptymap =
   Pred_map.fold
     (fun (name, arity) id preds ->
-      (* Printf.printf "predicate with name %s and arity %d" name arity; *)
       let tys = Pred_ty_map.find id ptymap in
       (name, arity, id, tys) :: preds)
     pmap []
@@ -332,7 +355,14 @@ let make_exformula schema f fvs =
     }
   in
   let f, ctx = translate_formula init_ctx f in
-  let fvs = map (fun v -> Var_map.find v ctx.vmap) fvs in
+  (* Printf.eprintf "%s\n" (String.concat " " fvs); *)
+  let fvs =
+    map
+      (fun v ->
+        (* Printf.eprintf "finding var %s\n" v; *)
+        Var_map.find v ctx.vmap)
+      fvs
+  in
   let preds = join_ps_and_pty ctx.pmap ctx.ptymap in
   (fvs, preds, f)
 
@@ -445,7 +475,7 @@ let print_jtype cmap = function
   | AntiJoin -> print_bool cmap true
 
 let print_bound cmap = function
-  | Bnd i -> print_zint_cst cmap i
+  | Bnd i -> print_size_t_cst cmap (Z.to_int i)
   | Inf ->
       print_string "inf_bound";
       cmap
@@ -516,6 +546,12 @@ let print_exformula f =
     | MOr (f1, f2) ->
         print_templ_ps_l cmap "mor" [ Printable (f1, go); Printable (f2, go) ]
     | MNeg f -> print_templ_ps_l cmap "mneg" [ Printable (f, go) ]
+    | MEq (t1, t2) ->
+        print_templ_ps_l cmap "mequal"
+          [ Printable (t1, print_term); Printable (t2, print_term) ]
+    | MEmptyRel ->
+        print_string "memptyrel";
+        cmap
     | MPrev (intv, f) -> print_temp_op cmap "mprev" [] intv [ f ]
     | MNext (intv, f) -> print_temp_op cmap "mnext" [] intv [ f ]
     | MOnce (intv, f) -> print_temp_op cmap "monce" [] intv [ f ]

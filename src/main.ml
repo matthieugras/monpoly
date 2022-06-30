@@ -147,6 +147,8 @@ let main () =
           Misc.verified := false;
 
         let is_mon, pf, vartypes = check_formula sign f in
+        if not is_mon then
+          failwith "abort because not monitorable";
         let fv = List.map fst vartypes in
         if !sigout then
           Predicate.print_vartypes_list vartypes
