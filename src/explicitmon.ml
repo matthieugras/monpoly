@@ -116,12 +116,14 @@ type exformula =
   | MUntil of bool * interval * exformula * exformula
   | MEventually of interval * exformula
 
-let translate_bnd = function
-  | OBnd a -> Bnd (MFOTL.ts_minus a Z.one)
+let translate_bnd upper = function
+  | OBnd a ->
+      if upper then Bnd (MFOTL.ts_minus a Z.one)
+      else Bnd (MFOTL.ts_plus a Z.one)
   | CBnd a -> Bnd a
   | MFOTL.Inf -> Inf
 
-let translate_intv (a, b) = (translate_bnd a, translate_bnd b)
+let translate_intv (a, b) = (translate_bnd false a, translate_bnd true b)
 
 let create_new_id =
   incr curr_id;
