@@ -74,6 +74,19 @@ type translation_ctx = {
   vmap : var_id Var_map.t;
 }
 
+let filter_vars ctx keep_vars =
+  let vmap = Var_map.filter (fun var _ -> List.mem var keep_vars) ctx.vmap in
+  { ctx with vmap }
+
+let maybe_add_var ctx name =
+  let vmap, new_id = Var_map.maybe_make_new ctx.vmap name in
+  ({ ctx with vmap }, new_id)
+
+let maybe_add_pred ctx name arity ptys =
+  let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
+  let ptymap = Pred_ty_map.add new_id ptys ctx.ptymap in
+  ({ ctx with pmap; ptymap }, new_id)
+
 type cst_type = CstEq | CstLess | CstLessEq
 type join_type = NatJoin | AntiJoin
 
@@ -115,6 +128,7 @@ type exformula =
   | MFusedSimpleOp of simple_op list * exformula
   | MUntil of bool * interval * exformula * exformula
   | MEventually of interval * exformula
+  | MAggregation of var_id * agg_op * var_id * var_id list * exformula
 
 let translate_bnd upper = function
   | OBnd a ->
@@ -133,8 +147,8 @@ let rec translate_term ctx t =
   let module P = Predicate in
   match t with
   | P.Var name ->
-      let vmap, id = Var_map.maybe_make_new ctx.vmap name in
-      (TVar id, { ctx with vmap })
+      let ctx, id = maybe_add_var ctx name in
+      (TVar id, ctx)
   | P.Cst cst -> (TCst cst, ctx)
   | P.F2i t -> translate_term ctx t
   | P.I2f t -> translate_term ctx t
@@ -157,36 +171,35 @@ and translate_two_terms ctx t1 t2 =
   let t2, ctx = translate_term ctx t2 in
   (ctx, t1, t2)
 
-let translate_pred_args schema_entry vmap terms =
+let translate_pred_args schema_entry ctx terms =
   let module P = Predicate in
-  let vmap, pargs, ptys =
+  let ctx, pargs, ptys =
     List.fold_left2
-      (fun (vmap, trsfd, ptys) t (_, ty) ->
+      (fun (ctx, trsfd, ptys) t (_, ty) ->
         match t with
         | P.Var name ->
-            let vmap, new_id = Var_map.maybe_make_new vmap name in
+            let ctx, new_id = maybe_add_var ctx name in
             let trsfd = PVar (ty, new_id) :: trsfd in
-            (vmap, trsfd, ty :: ptys)
-        | P.Cst (P.Int _ as cst) -> (vmap, PCst cst :: trsfd, TInt :: ptys)
-        | P.Cst (P.Str _ as cst) -> (vmap, PCst cst :: trsfd, TStr :: ptys)
-        | P.Cst (P.Float _ as cst) -> (vmap, PCst cst :: trsfd, TFloat :: ptys)
+            (ctx, trsfd, ty :: ptys)
+        | P.Cst (P.Int _ as cst) -> (ctx, PCst cst :: trsfd, TInt :: ptys)
+        | P.Cst (P.Str _ as cst) -> (ctx, PCst cst :: trsfd, TStr :: ptys)
+        | P.Cst (P.Float _ as cst) -> (ctx, PCst cst :: trsfd, TFloat :: ptys)
         | _ -> failwith "unsupported predicate arg")
-      (vmap, [], []) terms schema_entry
+      (ctx, [], []) terms schema_entry
   in
-  (vmap, List.rev pargs, List.rev ptys)
+  (ctx, List.rev pargs, List.rev ptys)
 
 let translate_pred ctx name arity terms =
-  let vmap, trsfd, ptys =
-    translate_pred_args (List.assoc name ctx.schema) ctx.vmap terms
+  let ctx, trsfd, ptys =
+    translate_pred_args (List.assoc name ctx.schema) ctx terms
   in
-  if name == "tp" && arity == 1 then (MTp (nth trsfd 0), { ctx with vmap })
-  else if name = "ts" && arity == 1 then (MTs (nth trsfd 0), { ctx with vmap })
+  if name == "tp" && arity == 1 then (MTp (nth trsfd 0), ctx)
+  else if name = "ts" && arity == 1 then (MTs (nth trsfd 0), ctx)
   else if name = "tpts" && arity == 2 then
-    (MTpts (nth trsfd 0, nth trsfd 1), { ctx with vmap })
+    (MTpts (nth trsfd 0, nth trsfd 1), ctx)
   else
-    let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
-    let ptymap = Pred_ty_map.add new_id ptys ctx.ptymap in
-    (MPredicate (new_id, trsfd), { ctx with vmap; pmap; ptymap })
+    let ctx, new_id = maybe_add_pred ctx name arity ptys in
+    (MPredicate (new_id, trsfd), ctx)
 
 let is_special_and f1 f2 =
   let fv1 = MFOTL.free_vars f1 in
@@ -244,8 +257,15 @@ let rec translate_formula ctx = function
       (MEq (t1, t2), ctx)
   | Neg (Equal (Var a, Var b)) when a = b -> (MEmptyRel, ctx)
   | Neg f ->
-      let f, cmap = translate_formula ctx f in
-      (MNeg f, cmap)
+      let f, ctx = translate_formula ctx f in
+      (MNeg f, ctx)
+  | Aggreg (_, res_var, op, agg_var, gvars, f) ->
+      let f, ctx = translate_formula ctx f in
+      let nctx = filter_vars ctx gvars in
+      let nctx, res_var = maybe_add_var nctx res_var in
+      let agg_var = Var_map.find agg_var ctx.vmap in
+      let gvars = map (fun var -> Var_map.find var ctx.vmap) gvars in
+      (MAggregation (res_var, op, agg_var, gvars, f), nctx)
   (* fused op cases *)
   | Exists (_, _) as f -> transform_fused_op ctx [] f
   | And (f1, f2) as f when is_special_and f1 f2 ->
@@ -274,9 +294,8 @@ and translate_safe_assignment ctx sops f1 (x, y) =
         let fv1 = String_set.of_list (MFOTL.free_vars f1) in
         let x_free = String_set.mem x fv1 in
         let y_free = String_set.mem y fv1 in
-        let vmap, x = Var_map.maybe_make_new ctx.vmap x in
-        let vmap, y = Var_map.maybe_make_new vmap y in
-        let ctx = { ctx with vmap } in
+        let ctx, x = maybe_add_var ctx x in
+        let ctx, y = maybe_add_var ctx y in
         let sop =
           if x_free then MAndAssign (y, TVar x)
           else if y_free then MAndAssign (x, TVar y)
@@ -284,8 +303,8 @@ and translate_safe_assignment ctx sops f1 (x, y) =
         in
         (ctx, sop)
     | t, P.Var x | P.Var x, t ->
-        let vmap, x = Var_map.maybe_make_new ctx.vmap x in
-        let t, ctx = translate_term { ctx with vmap } t in
+        let ctx, x = maybe_add_var ctx x in
+        let t, ctx = translate_term ctx t in
         (ctx, MAndAssign (x, t))
     | _ -> failwith "lol"
   in
@@ -318,16 +337,11 @@ and translate_constraint ctx sops f1 f2 =
 
 and transform_fused_op ctx sops = function
   | Exists (vars, f) ->
-      (* Printf.eprintf "before:\n"; *)
-      (* print_var_map ctx.vmap; *)
       let vmap, old_ids, new_ids = Var_map.make_new_mult ctx.vmap vars in
       let f, ctx =
         transform_fused_op { ctx with vmap } (MExists new_ids :: sops) f
       in
       let vmap = Var_map.update_all ctx.vmap vars old_ids in
-      (* Printf.eprintf "after:\n"; *)
-      (* print_var_map vmap; *)
-      (* Printf *)
       (f, { ctx with vmap })
   | And (f1, (Equal (x, y) as f2))
     when is_special_and f1 f2 && is_safe_assignment f1 f2 ->
@@ -357,14 +371,7 @@ let make_exformula schema f fvs =
     }
   in
   let f, ctx = translate_formula init_ctx f in
-  (* Printf.eprintf "%s\n" (String.concat " " fvs); *)
-  let fvs =
-    map
-      (fun v ->
-        (* Printf.eprintf "finding var %s\n" v; *)
-        Var_map.find v ctx.vmap)
-      fvs
-  in
+  let fvs = map (fun v -> Var_map.find v ctx.vmap) fvs in
   let preds = join_ps_and_pty ctx.pmap ctx.ptymap in
   (fvs, preds, f)
 
@@ -392,8 +399,22 @@ let print_bool cmap b =
   printf "%B" b;
   cmap
 
+let print_int cmap i =
+  printf "%d" i;
+  cmap
+
 let print_size_t_cst cmap i =
   printf "mp_size_t<%d>" i;
+  cmap
+
+let print_agg_op cmap op =
+  (match op with
+  | Max -> print_string "max_agg_op"
+  | Min -> print_string "min_agg_op"
+  | Avg -> print_string "avg_agg_op"
+  | Sum -> print_string "sum_agg_op"
+  | Cnt -> print_string "cnt_agg_op"
+  | _ -> failwith "unsupported fragment");
   cmap
 
 let print_string_cst cmap s =
@@ -461,7 +482,7 @@ let rec print_pred_arg cmap arg =
   | PVar (ty, id) ->
       print_template cmap "pvar" (fun cmap ->
           print_printable_list cmap
-            [ Printable (ty, print_ty); Printable (id, print_size_t_cst) ])
+            [ Printable (ty, print_ty); Printable (id, print_int) ])
   | PCst cst ->
       print_template cmap "pcst" (fun cmap ->
           print_printable_list cmap [ Printable (cst, print_cst) ])
@@ -471,6 +492,15 @@ let print_templ_ps_l cmap name ps =
 
 let print_templ_l cmap name l pfn =
   print_template cmap name (fun cmap -> print_list cmap l pfn)
+
+let print_var_list cmap vars =
+  print_templ_ps_l cmap "mp_list_c"
+    (Printable
+       ( (),
+         fun cmap _ ->
+           print_string "std::size_t";
+           cmap )
+    :: map (fun var -> Printable (var, print_int)) vars)
 
 let print_jtype cmap = function
   | NatJoin -> print_bool cmap false
@@ -483,7 +513,7 @@ let print_bound cmap = function
       cmap
 
 let rec print_term cmap = function
-  | TVar id -> print_template cmap "tvar" (fun cmap -> print_size_t_cst cmap id)
+  | TVar id -> print_template cmap "tvar" (fun cmap -> print_int cmap id)
   | TCst cst -> print_template cmap "tcst" (fun cmap -> print_cst cmap cst)
   | F2i t -> print_rec_term cmap "tf2i" [ t ]
   | I2f t -> print_rec_term cmap "ti2f" [ t ]
@@ -506,7 +536,7 @@ let print_cst_ty cmap ty =
 let print_sop cmap = function
   | MAndAssign (res_var, t) ->
       print_templ_ps_l cmap "mandassign"
-        [ Printable (res_var, print_size_t_cst); Printable (t, print_term) ]
+        [ Printable (res_var, print_int); Printable (t, print_term) ]
   | MAndRel (is_neg, ty, t1, t2) ->
       print_templ_ps_l cmap "mandrel"
         [
@@ -515,7 +545,7 @@ let print_sop cmap = function
           Printable (t1, print_term);
           Printable (t2, print_term);
         ]
-  | MExists vars -> print_templ_l cmap "mexists" vars print_size_t_cst
+  | MExists vars -> print_templ_l cmap "mexists" vars print_int
 
 let print_sops cmap sops = print_templ_l cmap "simpleops" sops print_sop
 
@@ -533,7 +563,7 @@ let print_exformula f =
     match f with
     | MPredicate (id, args) ->
         print_templ_ps_l cmap "mpredicate"
-          (Printable (id, print_size_t_cst)
+          (Printable (id, print_int)
           :: map (fun arg -> Printable (arg, print_pred_arg)) args)
     | MTp arg -> print_templ_ps_l cmap "mtp" [ Printable (arg, print_pred_arg) ]
     | MTs arg -> print_templ_ps_l cmap "mts" [ Printable (arg, print_pred_arg) ]
@@ -566,6 +596,15 @@ let print_exformula f =
           [ Printable (is_neg, print_bool) ]
           intv [ f1; f2 ]
     | MEventually (intv, f) -> print_temp_op cmap "meventually" [] intv [ f ]
+    | MAggregation (var1, op, var2, var_list, f) ->
+        print_templ_ps_l cmap "maggregation"
+          [
+            Printable (var1, print_int);
+            Printable (op, print_agg_op);
+            Printable (var2, print_int);
+            Printable (var_list, print_var_list);
+            Printable (f, go);
+          ]
     | MFusedSimpleOp (sops, f) ->
         print_templ_ps_l cmap "mfusedsimpleop"
           [ Printable (sops, print_sops); Printable (f, go) ]
@@ -599,12 +638,7 @@ let print_exformula_csts cmap =
     (map (fun (a, b) -> (a, Float.to_string b)) cmap.fcstmap)
 
 let print_fvs fvs =
-  print_assignment () "using free_variables"
-    (Printable
-       ( fvs,
-         fun _ fvs ->
-           print_templ_ps_l () "mp_list"
-             (map (fun fv -> Printable (fv, print_size_t_cst)) fvs) ));
+  print_assignment () "using free_variables" (Printable (fvs, print_var_list));
   print_newline ()
 
 let with_open_out_chan s f =
@@ -618,12 +652,12 @@ let print_name_arity_tup (name, arity) =
   print_braced_list
     [
       Printable (name, fun _ name -> print_string name);
-      Printable (arity, fun _ arity -> print_int arity);
+      Printable (arity, print_int);
     ]
 
 let print_id_tys_pair (id, tys) =
   print_enclosed () "{" "}" (fun _ ->
-      let ps = [ Printable (id, fun _ id -> print_int id) ] in
+      let ps = [ Printable (id, print_int) ] in
       print_printable_list () ps)
 
 let print_pred cmap (name, _, id, tys) =
@@ -635,7 +669,7 @@ let print_pred cmap (name, _, id, tys) =
           fun _ (id, tys) ->
             print_braced_list
               [
-                Printable (id, fun _ id -> print_int id);
+                Printable (id, print_int);
                 Printable
                   ( tys,
                     fun _ tys ->
