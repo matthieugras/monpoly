@@ -111,6 +111,13 @@ type predarg = PVar of tcst * var_id | PCst of cst
 type bound = Bnd of tsdiff | Inf
 type interval = bound * bound
 
+type aggreg_info = {
+  res_var : var_id;
+  op : agg_op;
+  agg_var : var_id;
+  gvars : var_id list;
+}
+
 type exformula =
   | MPredicate of pred_id * predarg list
   | MTp of predarg
@@ -124,11 +131,13 @@ type exformula =
   | MPrev of interval * exformula
   | MNext of interval * exformula
   | MOnce of interval * exformula
+  | MOnceAgg of aggreg_info * interval * exformula
   | MSince of bool * interval * exformula * exformula
+  | MSinceAgg of aggreg_info * bool * interval * exformula * exformula
   | MFusedSimpleOp of simple_op list * exformula
   | MUntil of bool * interval * exformula * exformula
   | MEventually of interval * exformula
-  | MAggregation of var_id * agg_op * var_id * var_id list * exformula
+  | MAggregation of aggreg_info * exformula
 
 let translate_bnd upper = function
   | OBnd a ->
@@ -259,13 +268,17 @@ let rec translate_formula ctx = function
   | Neg f ->
       let f, ctx = translate_formula ctx f in
       (MNeg f, ctx)
-  | Aggreg (_, res_var, op, agg_var, gvars, f) ->
+  | Aggreg (_, res_var, op, agg_var, gvars, f) -> (
       let f, ctx = translate_formula ctx f in
       let nctx = filter_vars ctx gvars in
       let nctx, res_var = maybe_add_var nctx res_var in
       let agg_var = Var_map.find agg_var ctx.vmap in
       let gvars = map (fun var -> Var_map.find var ctx.vmap) gvars in
-      (MAggregation (res_var, op, agg_var, gvars, f), nctx)
+      let info = { res_var; op; agg_var; gvars } in
+      match f with
+      | MOnce (intv, f) -> (MOnceAgg (info, intv, f), nctx)
+      | MSince (b, intv, f1, f2) -> (MSinceAgg (info, b, intv, f1, f2), nctx)
+      | _ -> (MAggregation (info, f), nctx))
   (* fused op cases *)
   | Exists (_, _) as f -> transform_fused_op ctx [] f
   | And (f1, f2) as f when is_special_and f1 f2 ->
@@ -494,13 +507,17 @@ let print_templ_l cmap name l pfn =
   print_template cmap name (fun cmap -> print_list cmap l pfn)
 
 let print_var_list cmap vars =
-  print_templ_ps_l cmap "mp_list_c"
-    (Printable
-       ( (),
-         fun cmap _ ->
-           print_string "std::size_t";
-           cmap )
-    :: map (fun var -> Printable (var, print_int)) vars)
+  if List.length vars == 0 then (
+    print_string "mp_list<>";
+    cmap)
+  else
+    print_templ_ps_l cmap "mp_list_c"
+      (Printable
+         ( (),
+           fun cmap _ ->
+             print_string "std::size_t";
+             cmap )
+      :: map (fun var -> Printable (var, print_int)) vars)
 
 let print_jtype cmap = function
   | NatJoin -> print_bool cmap false
@@ -558,6 +575,14 @@ let print_assignment cmap lhs_s rhs_p =
   print_string ";";
   cmap
 
+let aggreg_info_ps { res_var; op; agg_var; gvars } =
+  [
+    Printable (res_var, print_int);
+    Printable (op, print_agg_op);
+    Printable (agg_var, print_int);
+    Printable (gvars, print_var_list);
+  ]
+
 let print_exformula f =
   let rec go cmap f =
     match f with
@@ -587,22 +612,28 @@ let print_exformula f =
     | MPrev (intv, f) -> print_temp_op cmap "mprev" [] intv [ f ]
     | MNext (intv, f) -> print_temp_op cmap "mnext" [] intv [ f ]
     | MOnce (intv, f) -> print_temp_op cmap "monce" [] intv [ f ]
+    | MOnceAgg (agginfo, intv, f) ->
+        print_temp_op cmap "monceagg" (aggreg_info_ps agginfo) intv [ f ]
     | MSince (is_neg, intv, f1, f2) ->
         print_temp_op cmap "msince"
           [ Printable (is_neg, print_bool) ]
+          intv [ f1; f2 ]
+    | MSinceAgg (agginfo, is_neg, intv, f1, f2) ->
+        print_temp_op cmap "msince"
+          (aggreg_info_ps agginfo @ [ Printable (is_neg, print_bool) ])
           intv [ f1; f2 ]
     | MUntil (is_neg, intv, f1, f2) ->
         print_temp_op cmap "muntil"
           [ Printable (is_neg, print_bool) ]
           intv [ f1; f2 ]
     | MEventually (intv, f) -> print_temp_op cmap "meventually" [] intv [ f ]
-    | MAggregation (var1, op, var2, var_list, f) ->
+    | MAggregation ({ res_var; op; agg_var; gvars }, f) ->
         print_templ_ps_l cmap "maggregation"
           [
-            Printable (var1, print_int);
+            Printable (res_var, print_int);
             Printable (op, print_agg_op);
-            Printable (var2, print_int);
-            Printable (var_list, print_var_list);
+            Printable (agg_var, print_int);
+            Printable (gvars, print_var_list);
             Printable (f, go);
           ]
     | MFusedSimpleOp (sops, f) ->
