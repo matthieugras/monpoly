@@ -56,11 +56,6 @@ val no_rw: bool ref
 val unfold_let: expand_mode option ref
   (** Flags corresponding to the command-line options -no_rw and -unfold_let. *)
 
-val normalize: formula -> formula
-  (** This function normalizes a formula by eliminating synactic
-      sugar, pushing down negations, and eliminating double
-      negation. *)
-
 val is_special_case: (var list) -> formula -> bool
 (** Returns [true] if the formula does not need to be evaluated
     independently. *)
@@ -80,5 +75,6 @@ val check_let: formula -> bool
 val expand_let: expand_mode -> formula -> formula
 
 val elim_syntactic_sugar: formula -> formula
-
 val is_and_relop: formula -> bool
+val is_future: formula -> bool
+(** Returns [true] if formula contains future operators *)

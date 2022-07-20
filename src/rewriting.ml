@@ -245,14 +245,17 @@ let push_negation g =
   push g
 
 
+let normalize_negation f = 
+  elim_double_negation (push_negation f)
+
+let normalize_syntax f = 
+  elim_syntactic_sugar (simplify_terms f)
+
 (* The function [normalize] pushes simplifies terms, eliminates
    syntactic siguar, pushes down negations, and eliminates double
    negations. *)
 let normalize f =
-  elim_double_negation
-    (push_negation
-       (elim_syntactic_sugar
-          (simplify_terms f)))
+  normalize_negation (normalize_syntax f)
 
 
 
@@ -1695,8 +1698,23 @@ let check_formula s f =
       prerr_string "The formula is NOT monitorable. Use the -check or -verbose flags.\n";
     (is_mon, f, fvtypes)
   else
-    (* Rewriting and checking monitorability again *)
-    let nf = normalize f in
+    (* Normalizing, rewriting, and checking monitorability again *)
+    (* We normalize in two steps: 
+        - syntax first
+        - then we (optionally) push negation 
+       Negation is pushed only if it does not make the
+       formula non-monitorable
+    *)
+
+    let nsf = normalize_syntax f in
+    let nf = normalize_negation nsf in
+    
+    let is_nsf_mon = check_mon nsf in
+    let is_nf_mon = check_mon nf in
+    let nf = if (fst is_nsf_mon) && not (fst is_nf_mon) 
+             then nsf 
+             else nf in
+
     if (Misc.debugging Dbg_monitorable) && nf <> f then
       MFOTL.prerrnl_formula "The normalized formula is:\n  " nf;
 
@@ -1705,12 +1723,6 @@ let check_formula s f =
     if (Misc.debugging Dbg_monitorable) && rf <> nf then
       MFOTL.prerrnl_formula "The \"rewritten\" formula is:\n  " rf;
 
-    (* By default, that is without user specification (see option
-       -nonewlastts), we add a new maximal timestamp for future formulas;
-       that is, we assume that no more events will happen in the
-       future. For past-only formulas we never add such a timestamp. *)
-    if not (is_future rf) then
-      Misc.new_last_ts := false;
 
     if !Misc.verbose || !Misc.checkf then
       begin
