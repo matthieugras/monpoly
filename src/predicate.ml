@@ -370,7 +370,10 @@ let rec string_of_cst c =
   | Str s -> format_string s
   | Regexp (p, _) -> Printf.sprintf "r%s" (format_string p)
 
-let print_cst c = print_string (string_of_cst c)
+let print_cst c = match c with
+    | Float f -> print_string (Printf.sprintf "%.5e" f)
+    | _ ->print_string (string_of_cst c)
+
 let prerr_cst c = prerr_string (string_of_cst c)
 
 
