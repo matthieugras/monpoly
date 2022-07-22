@@ -619,7 +619,7 @@ let print_exformula f =
           [ Printable (is_neg, print_bool) ]
           intv [ f1; f2 ]
     | MSinceAgg (agginfo, is_neg, intv, f1, f2) ->
-        print_temp_op cmap "msince"
+        print_temp_op cmap "msinceagg"
           (aggreg_info_ps agginfo @ [ Printable (is_neg, print_bool) ])
           intv [ f1; f2 ]
     | MUntil (is_neg, intv, f1, f2) ->
