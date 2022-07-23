@@ -34,7 +34,7 @@ open IntMap
 
 type relop = LT | GT | LEQ | GEQ | EQ 
 
-type aggrop = AVG | MIN | MAX | MED | CNT | SUM 
+type aggrop = AVG | MIN | MAX | CNT | SUM 
 
 type genformula = 
   | GRel          of (relop * term * term)
@@ -106,7 +106,7 @@ let aggr_op = function
 | MIN -> Min
 | CNT -> Cnt
 | AVG -> Avg
-| MED -> Med
+(* | MED -> Med *)
 | SUM -> Sum
 
 
@@ -115,7 +115,7 @@ let aggr_op_type = function
 | MIN -> TCst TInt
 | CNT -> TCst TInt
 | AVG -> TCst TFloat
-| MED -> TCst TFloat
+(* | MED -> TCst TFloat *)
 | SUM -> TCst TInt
 
 let rec formula_of_genformula = function
@@ -454,7 +454,7 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
       (* let group_vars = Gen.map (fun r -> Set.diff (Set.of_list vars) (Set.singleton r)) result_var in *)
       let aggr_free_vars = var_op Set.union vars new_bvs in
       let aggr_var = Gen.oneofl aggr_free_vars in
-      let aggr_gen_all = Gen.oneofl [MAX ; MIN ; CNT ; SUM ; AVG ; MED] in
+      let aggr_gen_all = Gen.oneofl [MAX ; MIN ; CNT ; SUM ; AVG] in
       let aggr_gen_mm = Gen.oneofl [MAX ; MIN] in
       let aggr_gen_mmcs = Gen.oneofl [MAX ; MIN ; CNT ; SUM] in
       let side = Gen.bool in
@@ -536,10 +536,10 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
                 (fun (newMap, sf) -> result_var >>= 
                   (fun r -> aggr_var >>= 
                     (fun a -> fun s -> (newMap, gAggAvg r AVG a (var_op Set.diff vars [r]) sf))));
-       aq, (go (predmap, aggr_free_vars, (n-1))) >>= 
-                (fun (newMap, sf) -> result_var >>= 
-                  (fun r -> aggr_var >>= 
-                    (fun a -> fun s -> (newMap, gAggMed r MED a (var_op Set.diff vars [r]) sf))));
+       (* aq, (go (predmap, aggr_free_vars, (n-1))) >>=  *)
+       (*          (fun (newMap, sf) -> result_var >>=  *)
+       (*            (fun r -> aggr_var >>=  *)
+       (*              (fun a -> fun s -> (newMap, gAggMed r MED a (var_op Set.diff vars [r]) sf)))); *)
        aq, (go (predmap, aggr_free_vars, (n-1))) >>= 
                 (fun (newMap, sf) -> result_var >>= 
                   (fun r -> aggr_var >>= 
@@ -582,10 +582,10 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
                 (fun (newMap, sf) -> result_var >>= 
                   (fun r -> aggr_var >>= 
                     (fun a -> fun s -> (newMap, gAggAvg r AVG a (var_op Set.diff vars [r]) sf))));
-       aq, (go (predmap, aggr_free_vars, (n-1))) >>= 
-                (fun (newMap, sf) -> result_var >>= 
-                  (fun r -> aggr_var >>= 
-                    (fun a -> fun s -> (newMap, gAggMed r MED a (var_op Set.diff vars [r]) sf))));
+       (* aq, (go (predmap, aggr_free_vars, (n-1))) >>=  *)
+       (*          (fun (newMap, sf) -> result_var >>=  *)
+       (*            (fun r -> aggr_var >>=  *)
+       (*              (fun a -> fun s -> (newMap, gAggMed r MED a (var_op Set.diff vars [r]) sf)))); *)
        aq, (go (predmap, aggr_free_vars, (n-1))) >>= 
                 (fun (newMap, sf) -> result_var >>= 
                   (fun r -> aggr_var >>= 
