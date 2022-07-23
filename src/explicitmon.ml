@@ -90,14 +90,13 @@ let maybe_add_var ctx name =
   let vmap, new_id = Var_map.maybe_make_new ctx.vmap name in
   ({ ctx with vmap }, new_id)
 
-let overwrite_vars ctx1 ctx2 vars =
-  let vmap1, vmap2 = (ctx1.vmap, ctx2.vmap) in
+let overwrite_vars vmap1 vmap2 vars =
   let vmap1 =
     Var_map.merge
       (fun v id1 id2 -> if List.mem v vars then id2 else id1)
       vmap1 vmap2
   in
-  { ctx1 with vmap = vmap1 }
+  vmap1
 
 let maybe_add_pred ctx name arity ptys =
   let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
@@ -287,7 +286,8 @@ let rec translate_formula ctx = function
       (MNeg f, ctx)
   | Aggreg (_, res_var, op, agg_var, gvars, f) -> (
       let f, agg_ctx = translate_formula (filter_vars ctx gvars) f in
-      let ctx = overwrite_vars ctx agg_ctx gvars in
+      let vmap = overwrite_vars ctx.vmap agg_ctx.vmap gvars in
+      let ctx = { agg_ctx with vmap } in
       let ctx, res_var = maybe_add_var ctx res_var in
       let agg_var = Var_map.find agg_var agg_ctx.vmap in
       let gvars = map (fun var -> Var_map.find var agg_ctx.vmap) gvars in
