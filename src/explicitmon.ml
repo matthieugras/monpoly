@@ -74,6 +74,14 @@ type translation_ctx = {
   vmap : var_id Var_map.t;
 }
 
+let print_vars ctx =
+  let s =
+    List.map
+      (fun (var, id) -> Printf.sprintf "(%s, %d)" var id)
+      (List.of_seq (Var_map.to_seq ctx.vmap))
+  in
+  Printf.printf "[%s]\n" (String.concat ", " s)
+
 let filter_vars ctx keep_vars =
   let vmap = Var_map.filter (fun var _ -> List.mem var keep_vars) ctx.vmap in
   { ctx with vmap }
@@ -81,6 +89,15 @@ let filter_vars ctx keep_vars =
 let maybe_add_var ctx name =
   let vmap, new_id = Var_map.maybe_make_new ctx.vmap name in
   ({ ctx with vmap }, new_id)
+
+let overwrite_vars ctx1 ctx2 vars =
+  let vmap1, vmap2 = (ctx1.vmap, ctx2.vmap) in
+  let vmap1 =
+    Var_map.merge
+      (fun v id1 id2 -> if List.mem v vars then id2 else id1)
+      vmap1 vmap2
+  in
+  { ctx1 with vmap = vmap1 }
 
 let maybe_add_pred ctx name arity ptys =
   let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
@@ -269,16 +286,16 @@ let rec translate_formula ctx = function
       let f, ctx = translate_formula ctx f in
       (MNeg f, ctx)
   | Aggreg (_, res_var, op, agg_var, gvars, f) -> (
-      let f, ctx = translate_formula ctx f in
-      let nctx = filter_vars ctx gvars in
-      let nctx, res_var = maybe_add_var nctx res_var in
-      let agg_var = Var_map.find agg_var ctx.vmap in
-      let gvars = map (fun var -> Var_map.find var ctx.vmap) gvars in
+      let f, agg_ctx = translate_formula (filter_vars ctx gvars) f in
+      let ctx = overwrite_vars ctx agg_ctx gvars in
+      let ctx, res_var = maybe_add_var ctx res_var in
+      let agg_var = Var_map.find agg_var agg_ctx.vmap in
+      let gvars = map (fun var -> Var_map.find var agg_ctx.vmap) gvars in
       let info = { res_var; op; agg_var; gvars } in
       match f with
-      | MOnce (intv, f) -> (MOnceAgg (info, intv, f), nctx)
-      | MSince (b, intv, f1, f2) -> (MSinceAgg (info, b, intv, f1, f2), nctx)
-      | _ -> (MAggregation (info, f), nctx))
+      | MOnce (intv, f) -> (MOnceAgg (info, intv, f), ctx)
+      | MSince (b, intv, f1, f2) -> (MSinceAgg (info, b, intv, f1, f2), ctx)
+      | _ -> (MAggregation (info, f), ctx))
   (* fused op cases *)
   | Exists (_, _) as f -> transform_fused_op ctx [] f
   | And (f1, f2) as f when is_special_and f1 f2 ->
