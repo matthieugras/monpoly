@@ -59,7 +59,7 @@ type var_id = int
 type pred_id = int
 
 let print_var_map vmap =
-  Printf.eprintf "[%s]"
+  Printf.eprintf "[%s]\n"
     (let slist =
        map
          (fun (name, id) -> Printf.sprintf "(%s -> %d)" name id)
@@ -67,10 +67,19 @@ let print_var_map vmap =
      in
      String.concat ", " slist)
 
+let print_pmap pmap =
+  Printf.eprintf "[%s]\n"
+    (let slist =
+       map
+         (fun ((name, arity), id) ->
+           Printf.sprintf "(%d -> (%s, %d))" id name arity)
+         (List.of_seq (Pred_map.to_seq pmap))
+     in
+     String.concat ", " slist)
+
 type translation_ctx = {
-  schema : Db.schema;
-  pmap : pred_id Pred_map.t;
-  ptymap : tcst list Pred_ty_map.t;
+  fpmap : pred_id Pred_map.t;
+  fptymap : (bool * tcst list) Pred_ty_map.t;
   vmap : var_id Var_map.t;
 }
 
@@ -98,10 +107,77 @@ let overwrite_vars vmap1 vmap2 vars =
   in
   vmap1
 
-let maybe_add_pred ctx name arity ptys =
-  let pmap, new_id = Pred_map.maybe_make_new ctx.pmap (name, arity) in
-  let ptymap = Pred_ty_map.add new_id ptys ctx.ptymap in
-  ({ ctx with pmap; ptymap }, new_id)
+let maybe_add_pred ctx name arity builtin ptys =
+  let fpmap, new_id = Pred_map.maybe_make_new ctx.fpmap (name, arity) in
+  let fptymap = Pred_ty_map.add new_id (builtin, ptys) ctx.fptymap in
+  ({ ctx with fpmap; fptymap }, new_id)
+
+let overwrite_pred ctx name arity builtin ptys =
+  let fpmap, old_id, new_id = Pred_map.make_new ctx.fpmap (name, arity) in
+  let old_info =
+    match old_id with
+    | Some old_id -> Some (old_id, Pred_ty_map.find old_id ctx.fptymap)
+    | None -> None
+  in
+  let fptymap = Pred_ty_map.add new_id (builtin, ptys) ctx.fptymap in
+  ({ ctx with fpmap; fptymap }, new_id, old_info)
+
+let overwrite_mult ctx preds =
+  fold_left
+    (fun (ctx, ps) (name, arity, builtin, ptys) ->
+      let ctx, new_id, old_info = overwrite_pred ctx name arity builtin ptys in
+      (ctx, (name, arity, new_id, old_info) :: ps))
+    (ctx, []) preds
+
+let restore_pred ctx name arity new_id old_info =
+  let fpmap = Pred_map.remove (name, arity) ctx.fpmap in
+  let fptymap = Pred_ty_map.remove new_id ctx.fptymap in
+  let fpmap, fptymap =
+    match old_info with
+    | Some (old_id, old_tys) ->
+        let fpmap = Pred_map.add (name, arity) old_id fpmap in
+        let fptymap = Pred_ty_map.add old_id old_tys fptymap in
+        (fpmap, fptymap)
+    | None -> (fpmap, fptymap)
+  in
+  { ctx with fpmap; fptymap }
+
+let restore_mult ctx infs =
+  fold_left
+    (fun ctx (name, arity, new_id, old_info) ->
+      restore_pred ctx name arity new_id old_info)
+    ctx infs
+
+let ctx_of_sign sign =
+  let fpmap = Pred_map.empty in
+  let vmap = Var_map.empty in
+  let all_d =
+    filter_map
+      (fun (name, tys) ->
+        let arity = length tys in
+        match (name, arity) with
+        | "tp", 1 -> None
+        | "ts", 1 -> None
+        | "tpts", 2 -> None
+        | _ -> Some ((name, arity), (false, map snd tys)))
+      sign
+  in
+  let fpmap, _, ids = Pred_map.make_new_mult fpmap (map fst all_d) in
+  let fptymap =
+    map2 (fun a b -> (a, b)) ids (map snd all_d) |> to_seq |> Pred_ty_map.of_seq
+  in
+  { fpmap; vmap; fptymap }
+
+let get_fv_types ctx f =
+  let s =
+    Pred_map.fold
+      (fun (name, arity) id ps ->
+        let tys = snd (Pred_ty_map.find id ctx.fptymap) in
+        let tys = map (fun t -> ("", t)) tys in
+        (name, tys) :: ps)
+      ctx.fpmap []
+  in
+  fst (check_syntax s f)
 
 type cst_type = CstEq | CstLess | CstLessEq
 type join_type = NatJoin | AntiJoin
@@ -136,6 +212,7 @@ type aggreg_info = {
 
 type exformula =
   | MPredicate of pred_id * predarg list
+  | MLet of pred_id * var_id list * exformula * exformula
   | MTp of predarg
   | MTs of predarg
   | MTpts of predarg * predarg
@@ -196,11 +273,13 @@ and translate_two_terms ctx t1 t2 =
   let t2, ctx = translate_term ctx t2 in
   (ctx, t1, t2)
 
-let translate_pred_args schema_entry ctx terms =
+let translate_pred_args ctx name arity terms =
   let module P = Predicate in
+  let pred_id = Pred_map.find (name, arity) ctx.fpmap in
+  let builtin, ptys = Pred_ty_map.find pred_id ctx.fptymap in
   let ctx, pargs, ptys =
     List.fold_left2
-      (fun (ctx, trsfd, ptys) t (_, ty) ->
+      (fun (ctx, trsfd, ptys) t ty ->
         match t with
         | P.Var name ->
             let ctx, new_id = maybe_add_var ctx name in
@@ -210,21 +289,20 @@ let translate_pred_args schema_entry ctx terms =
         | P.Cst (P.Str _ as cst) -> (ctx, PCst cst :: trsfd, TStr :: ptys)
         | P.Cst (P.Float _ as cst) -> (ctx, PCst cst :: trsfd, TFloat :: ptys)
         | _ -> failwith "unsupported predicate arg")
-      (ctx, [], []) terms schema_entry
+      (ctx, [], []) terms ptys
   in
-  (ctx, List.rev pargs, List.rev ptys)
+  (ctx, List.rev pargs, builtin, List.rev ptys)
 
 let translate_pred ctx name arity terms =
-  let ctx, trsfd, ptys =
-    translate_pred_args (List.assoc name ctx.schema) ctx terms
-  in
-  if name == "tp" && arity == 1 then (MTp (nth trsfd 0), ctx)
-  else if name = "ts" && arity == 1 then (MTs (nth trsfd 0), ctx)
-  else if name = "tpts" && arity == 2 then
-    (MTpts (nth trsfd 0, nth trsfd 1), ctx)
-  else
-    let ctx, new_id = maybe_add_pred ctx name arity ptys in
-    (MPredicate (new_id, trsfd), ctx)
+  let ctx, trsfd, builtin, ptys = translate_pred_args ctx name arity terms in
+  match (name, arity, builtin) with
+  | "tp", 1, true -> (MTp (nth trsfd 0), ctx)
+  | "ts", 1, true -> (MTs (nth trsfd 0), ctx)
+  | "tpts", 2, true -> (MTpts (nth trsfd 0, nth trsfd 1), ctx)
+  | _, _, true -> failwith "unknown builtin predicate"
+  | _ ->
+      let ctx, new_id = maybe_add_pred ctx name arity false ptys in
+      (MPredicate (new_id, trsfd), ctx)
 
 let is_special_and f1 f2 =
   let fv1 = MFOTL.free_vars f1 in
@@ -242,6 +320,18 @@ let rec is_safe_assignment f1 f2 =
 
 let rec translate_formula ctx = function
   | Pred (name, arity, terms) -> translate_pred ctx name arity terms
+  | Let ((name, arity, terms), f1, f2) ->
+      let fvtys = get_fv_types ctx f1 in
+      let pvars =
+        map (function Var v -> v | _ -> failwith "not a var") terms
+      in
+      let ptys = map (fun v -> List.assoc v fvtys) pvars in
+      let f1, ctx = translate_formula ctx f1 in
+      let pvars = map (fun v -> Var_map.find v ctx.vmap) pvars in
+      let ctx, new_id, old_info = overwrite_pred ctx name arity false ptys in
+      let f2, ctx = translate_formula ctx f2 in
+      let ctx = restore_pred ctx name arity new_id old_info in
+      (MLet (new_id, pvars, f1, f2), ctx)
   | Prev (intv, f) ->
       let f, ctx = translate_formula ctx f in
       let intv = translate_intv intv in
@@ -382,27 +472,30 @@ and transform_fused_op ctx sops = function
       let f, ctx = translate_formula ctx f in
       (MFusedSimpleOp (sops, f), ctx)
 
-let join_ps_and_pty pmap ptymap =
+let join_ps_and_pty fpmap fptymap =
   Pred_map.fold
     (fun (name, arity) id preds ->
-      let tys = Pred_ty_map.find id ptymap in
+      let builtin, tys = Pred_ty_map.find id fptymap in
+      assert (not builtin);
       (name, arity, id, tys) :: preds)
-    pmap []
+    fpmap []
 
-let make_exformula schema f fvs =
+let make_exformula sign f fvs =
   (* normalize the formula *)
   let f = Rewriting.elim_syntactic_sugar f in
-  let init_ctx =
-    {
-      schema;
-      ptymap = Pred_ty_map.empty;
-      pmap = Pred_map.empty;
-      vmap = Var_map.empty;
-    }
+  let ctx = ctx_of_sign sign in
+  let ctx, infs =
+    overwrite_mult ctx
+      [
+        ("tp", 1, true, [ TInt ]);
+        ("ts", 1, true, [ TInt ]);
+        ("tpts", 2, true, [ TInt; TInt ]);
+      ]
   in
-  let f, ctx = translate_formula init_ctx f in
+  let f, ctx = translate_formula ctx f in
+  let ctx = restore_mult ctx infs in
   let fvs = map (fun v -> Var_map.find v ctx.vmap) fvs in
-  let preds = join_ps_and_pty ctx.pmap ctx.ptymap in
+  let preds = join_ps_and_pty ctx.fpmap ctx.fptymap in
   (fvs, preds, f)
 
 type cst_map = {
@@ -600,13 +693,22 @@ let aggreg_info_ps { res_var; op; agg_var; gvars } =
     Printable (gvars, print_var_list);
   ]
 
+let pred_args_ps args = map (fun arg -> Printable (arg, print_pred_arg)) args
+
 let print_exformula f =
   let rec go cmap f =
     match f with
     | MPredicate (id, args) ->
         print_templ_ps_l cmap "mpredicate"
-          (Printable (id, print_int)
-          :: map (fun arg -> Printable (arg, print_pred_arg)) args)
+          (Printable (id, print_int) :: pred_args_ps args)
+    | MLet (id, pvars, f1, f2) ->
+        print_templ_ps_l cmap "mlet"
+          [
+            Printable (id, print_int);
+            Printable (pvars, print_var_list);
+            Printable (f1, go);
+            Printable (f2, go);
+          ]
     | MTp arg -> print_templ_ps_l cmap "mtp" [ Printable (arg, print_pred_arg) ]
     | MTs arg -> print_templ_ps_l cmap "mts" [ Printable (arg, print_pred_arg) ]
     | MTpts (arg1, arg2) ->
@@ -736,19 +838,19 @@ let print_preds preds =
            print_braced_list ps ));
   print_newline ()
 
-let add_prefix fname = !explicit_mon_prefix ^ "/" ^ fname
+let add_prefix_to fname = !explicit_mon_prefix ^ "/" ^ fname
 
 let cpp_of_exformula f fvs preds =
-  with_open_out_chan (add_prefix "formula_in.h") (fun chan ->
+  with_open_out_chan (add_prefix_to "formula_in.h") (fun chan ->
       set_formatter_out_channel chan;
       let cmap = print_exformula f in
       print_fvs fvs;
       print_preds preds;
-      with_open_out_chan (add_prefix "formula_csts.h") (fun chan ->
+      with_open_out_chan (add_prefix_to "formula_csts.h") (fun chan ->
           set_formatter_out_channel chan;
           print_exformula_csts cmap;
           print_newline ()))
 
-let write_explicitmon_state schema f fvs =
-  let fvs, preds, f = make_exformula schema f fvs in
+let write_explicitmon_state sign f fvs =
+  let fvs, preds, f = make_exformula sign f fvs in
   cpp_of_exformula f fvs preds
