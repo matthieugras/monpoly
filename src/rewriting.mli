@@ -52,6 +52,7 @@ open Db
 
 type expand_mode = ExpandAll | ExpandNonshared
 
+val letpast_types: tcst list list ref
 val no_rw: bool ref
 val unfold_let: expand_mode option ref
   (** Flags corresponding to the command-line options -no_rw and -unfold_let. *)

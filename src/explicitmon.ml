@@ -169,6 +169,7 @@ let ctx_of_sign sign =
   { fpmap; vmap; fptymap }
 
 let get_fv_types ctx f =
+  let orig_fv = MFOTL.free_vars f in
   let s =
     Pred_map.fold
       (fun (name, arity) id ps ->
@@ -177,7 +178,8 @@ let get_fv_types ctx f =
         (name, tys) :: ps)
       ctx.fpmap []
   in
-  fst (check_syntax s f)
+  let fvtypes = fst (check_syntax s f) in
+  List.map (fun v -> (v, List.assoc v fvtypes)) orig_fv
 
 type cst_type = CstEq | CstLess | CstLessEq
 type join_type = NatJoin | AntiJoin
@@ -213,6 +215,7 @@ type aggreg_info = {
 type exformula =
   | MPredicate of pred_id * predarg list
   | MLet of pred_id * var_id list * exformula * exformula
+  | MLetPast of pred_id * var_id list * exformula * exformula
   | MTp of predarg
   | MTs of predarg
   | MTpts of predarg * predarg
@@ -332,6 +335,23 @@ let rec translate_formula ctx = function
       let f2, ctx = translate_formula ctx f2 in
       let ctx = restore_pred ctx name arity new_id old_info in
       (MLet (new_id, pvars, f1, f2), ctx)
+  | LetPast ((name, arity, terms), f1, f2) ->
+      let ptys =
+        match !letpast_types with
+        | l :: ls ->
+            letpast_types := ls;
+            l
+        | _ -> failwith "no typed found for letpast"
+      in
+      let pvars =
+        map (function Var v -> v | _ -> failwith "not a var") terms
+      in
+      let ctx, new_id, old_info = overwrite_pred ctx name arity false ptys in
+      let f1, ctx = translate_formula ctx f1 in
+      let pvars = map (fun v -> Var_map.find v ctx.vmap) pvars in
+      let f2, ctx = translate_formula ctx f2 in
+      let ctx = restore_pred ctx name arity new_id old_info in
+      (MLetPast (new_id, pvars, f1, f2), ctx)
   | Prev (intv, f) ->
       let f, ctx = translate_formula ctx f in
       let intv = translate_intv intv in
@@ -703,6 +723,14 @@ let print_exformula f =
           (Printable (id, print_int) :: pred_args_ps args)
     | MLet (id, pvars, f1, f2) ->
         print_templ_ps_l cmap "mlet"
+          [
+            Printable (id, print_int);
+            Printable (pvars, print_var_list);
+            Printable (f1, go);
+            Printable (f2, go);
+          ]
+    | MLetPast (id, pvars, f1, f2) ->
+        print_templ_ps_l cmap "mletpast"
           [
             Printable (id, print_int);
             Printable (pvars, print_var_list);
