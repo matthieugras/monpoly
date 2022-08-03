@@ -161,42 +161,6 @@ let update_since_all intv tsq inf comp rel1 rel2 =
   inf.sres
 
 
-
-let update_since intv tsq auxrels comp discard rel1 rel2 =
-  let rec elim_old_auxrels () =
-    (* remove old elements that felt out of the interval *)
-    if not (Mqueue.is_empty auxrels) then
-      let (tsj,relj) = Mqueue.top auxrels in
-      if not (MFOTL.in_left_ext (MFOTL.ts_minus tsq tsj) intv) then
-        begin
-          ignore(Mqueue.pop auxrels);
-          elim_old_auxrels()
-        end
-  in
-  elim_old_auxrels ();
-
-  let res = ref Relation.empty in
-  Mqueue.update_and_delete
-    (fun (tsj,relj) ->
-       let newrel = comp relj rel1 in
-       if (not discard) && MFOTL.in_right_ext (MFOTL.ts_minus tsq tsj) intv then
-         res := Relation.union !res newrel;
-       (tsj,newrel)
-    )
-    (* delete the current node if newrel is empty *)
-    (fun (_,relj) -> Relation.is_empty relj)
-    auxrels;
-
-  if not (Relation.is_empty rel2) then
-    begin
-      if (not discard) && MFOTL.in_right_ext MFOTL.ts_null intv then
-        res := Relation.union !res rel2;
-      mqueue_add_last auxrels tsq rel2
-    end;
-
-  !res
-
-
 let update_once_all intv tsq inf =
   let auxrels = inf.oaauxrels in
   let rec comp () =
@@ -522,7 +486,7 @@ let add_let_index f n rels =
     | EAnd (_,f1,f2,_,_)
     | EOr (_,f1,f2,_,_)
     | ESinceA (_,_,f1,f2,_,_)
-    | ESince (_,_,f1,f2,_,_)
+    | ESince (f1,f2,_,_)
     | ENUntil (_,_,f1,f2,_,_)
     | EUntil (_,_,f1,f2,_,_) ->
       update f1;
@@ -758,32 +722,32 @@ let rec eval f crt discard =
        )
     ), loc
 
-  | ESince (comp,intv,f1,f2,inf,loc) ->
+  | ESince (f1,f2,inf,loc) ->
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,Since] q=%d\n" q;
 
-    let eval_f1 rel2 comp2 =
+    let eval_f1 rel2 =
       (match eval f1 crt false with
        | Some rel1 ->
          inf.srel2 <- None;
          Perf.profile_enter ~tp:q ~loc;
-         let result = comp2 rel1 rel2 in
+         Optimized_mtl.add_new_ts_msaux tsq inf.saux;
+         Optimized_mtl.join_msaux rel1 inf.saux;
+         Optimized_mtl.add_new_table_msaux rel2 inf.saux;
          Perf.profile_exit ~tp:q ~loc;
-         Some result
+         Some (Optimized_mtl.result_msaux inf.saux)
        | None ->
          inf.srel2 <- Some rel2;
          None
       )
     in
 
-    let update_sauxrels = update_since intv tsq inf.sauxrels comp discard in
-
     (match inf.srel2 with
-     | Some rel2 -> eval_f1 rel2 update_sauxrels
+     | Some rel2 -> eval_f1 rel2
      | None ->
        (match eval f2 crt false with
         | None -> None
-        | Some rel2 -> eval_f1 rel2 update_sauxrels
+        | Some rel2 -> eval_f1 rel2
        )
     ), loc
 
@@ -1302,7 +1266,7 @@ let add_index f i tsi db =
     | EAnd (_,f1,f2,_,_)
     | EOr (_,f1,f2,_,_)
     | ESinceA (_,_,f1,f2,_,_)
-    | ESince (_,_,f1,f2,_,_)
+    | ESince (f1,f2,_,_)
     | ENUntil (_,_,f1,f2,_,_)
     | EUntil (_,_,f1,f2,_,_) ->
       update lets f1;
@@ -1481,8 +1445,9 @@ let add_ext neval f =
       let inf = {sres = Relation.empty; sarel2 = None; saauxrels = Mqueue.create()} in
       ESinceA (comp,intv,ff1,ff2,inf, next_loc())
     else
-      let inf = {srel2 = None; sauxrels = Mqueue.create()} in
-      ESince (comp,intv,ff1,ff2,inf, next_loc())
+      let saux = Optimized_mtl.init_msaux (not neg) intv attr1 attr2 in
+      let inf = {srel2 = None; saux} in
+      ESince (ff1,ff2,inf, next_loc())
 
   | Once ((_, Inf) as intv, f) ->
     let ff = add_ext f in
