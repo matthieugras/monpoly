@@ -129,38 +129,6 @@ let dllist_add_last auxrels tsq rel2 =
     else
       Dllist.add_last (tsq,rel2) auxrels
 
-(* [saauxrels] consists of those relations that are outside of the
-   relevant time window *)
-let update_since_all intv tsq inf comp rel1 rel2 =
-  inf.sres <- comp inf.sres rel1;
-  let auxrels = inf.saauxrels in
-  let rec elim () =
-    if not (Mqueue.is_empty auxrels) then
-      let (tsj,relj) = Mqueue.top auxrels in
-      if MFOTL.in_right_ext (MFOTL.ts_minus tsq tsj) intv then
-        begin
-          ignore (Mqueue.pop auxrels);
-          inf.sres <- Relation.union inf.sres (comp relj rel1);
-          elim ()
-        end
-  in
-  elim ();
-
-  Mqueue.update_and_delete
-    (fun (tsj, relj) -> (tsj, comp relj rel1))
-    (fun (_,relj) -> Relation.is_empty relj) (* delete the current node if newrel is empty *)
-    auxrels;
-
-  if not (Relation.is_empty rel2) then
-    begin
-      if MFOTL.in_right_ext MFOTL.ts_null intv then
-        inf.sres <- Relation.union inf.sres rel2;
-      mqueue_add_last auxrels tsq rel2
-    end;
-
-  inf.sres
-
-
 let update_once_all intv tsq inf =
   let auxrels = inf.oaauxrels in
   let rec comp () =
@@ -485,7 +453,6 @@ let add_let_index f n rels =
 
     | EAnd (_,f1,f2,_,_)
     | EOr (_,f1,f2,_,_)
-    | ESinceA (_,_,f1,f2,_,_)
     | ESince (f1,f2,_,_)
     | ENUntil (_,_,f1,f2,_,_)
     | EUntil (_,_,f1,f2,_,_) ->
@@ -692,35 +659,6 @@ let rec eval f crt discard =
             Some Relation.empty
         | None -> None
       end), loc
-
-  | ESinceA (comp,intv,f1,f2,inf,loc) ->
-    if Misc.debugging Dbg_eval then
-      Printf.eprintf "[eval,SinceA] q=%d\n%!" q;
-
-    let eval_f1 rel2 comp2 =
-      (match eval f1 crt false with
-       | Some rel1 ->
-         inf.sarel2 <- None;
-         Perf.profile_enter ~tp:q ~loc;
-         let result = comp2 rel1 rel2 in
-         Perf.profile_exit ~tp:q ~loc;
-         Some result
-       | None ->
-         inf.sarel2 <- Some rel2;
-         None
-      )
-    in
-
-    let update_sauxrels = update_since_all intv tsq inf comp in
-
-    (match inf.sarel2 with
-     | Some rel2 -> eval_f1 rel2 update_sauxrels
-     | None ->
-       (match eval f2 crt false with
-        | None -> None
-        | Some rel2 -> eval_f1 rel2 update_sauxrels
-       )
-    ), loc
 
   | ESince (f1,f2,inf,loc) ->
     if Misc.debugging Dbg_eval then
@@ -1265,7 +1203,6 @@ let add_index f i tsi db =
 
     | EAnd (_,f1,f2,_,_)
     | EOr (_,f1,f2,_,_)
-    | ESinceA (_,_,f1,f2,_,_)
     | ESince (f1,f2,_,_)
     | ENUntil (_,_,f1,f2,_,_)
     | EUntil (_,_,f1,f2,_,_) ->
@@ -1424,30 +1361,17 @@ let add_ext neval f =
   | Since (intv,f1,f2) ->
     let attr1 = MFOTL.free_vars f1 in
     let attr2 = MFOTL.free_vars f2 in
-    let ef1, neg =
+    let ef1, pos =
       (match f1 with
-       | Neg f1' -> f1',true
-       | _ -> f1,false
+       | Neg f1' -> f1', false
+       | _ -> f1, true
       )
-    in
-    let comp =
-      if neg then
-        let posl = List.map (fun v -> Misc.get_pos v attr2) attr1 in
-        assert(Misc.subset attr1 attr2);
-        fun relj rel1 -> Relation.minus posl relj rel1
-      else
-        let matches2 = Table.get_matches attr2 attr1 in
-        fun relj rel1 -> Relation.natural_join_sc2 matches2 relj rel1
     in
     let ff1 = add_ext ef1 in
     let ff2 = add_ext f2 in
-    if snd intv = Inf then
-      let inf = {sres = Relation.empty; sarel2 = None; saauxrels = Mqueue.create()} in
-      ESinceA (comp,intv,ff1,ff2,inf, next_loc())
-    else
-      let saux = Optimized_mtl.init_msaux (not neg) intv attr1 attr2 in
-      let inf = {srel2 = None; saux} in
-      ESince (ff1,ff2,inf, next_loc())
+    let saux = Optimized_mtl.init_msaux pos intv attr1 attr2 in
+    let inf = {srel2 = None; saux} in
+    ESince (ff1,ff2,inf, next_loc())
 
   | Once ((_, Inf) as intv, f) ->
     let ff = add_ext f in

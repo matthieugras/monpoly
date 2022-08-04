@@ -9,9 +9,6 @@ type mozinfo = { mozauxrels: (int * timestamp * relation) Dllist.dllist}
 
 type moinfo  = { moauxrels: (timestamp * relation) Dllist.dllist}
 
-type msainfo = { msres: relation;
-                 msarel2: relation option;
-                 msaauxrels: (timestamp * relation) Mqueue.t}
 type msinfo  = { msrel2: relation option;
                  msaux: Optimized_mtl.msaux}
 
@@ -53,7 +50,6 @@ type mformula =
   | MAggOnce of agg_info * Aggreg.once_aggregator * mformula * int
   | MPrev of interval * mformula * pinfo * int
   | MNext of interval * mformula * ninfo * int
-  | MSinceA of comp_two * interval * mformula * mformula * sainfo * int
   | MSince of mformula * mformula * sinfo * int
   | MOnceA of interval * mformula * oainfo * int
   | MOnceZ of interval * mformula * mozinfo * int
@@ -79,7 +75,6 @@ let free_vars f =
   | MAggOnce       (_inf, _state, f1, _)     -> get_pred f1
   | MPrev          (_, f1, _, _)             -> get_pred f1
   | MNext          (_, f1, _, _)             -> get_pred f1
-  | MSinceA        (c, _, f1, f2, _, _)      -> Misc.union (get_pred f1) (get_pred f2)
   | MSince         (f1, f2, _, _)            -> Misc.union (get_pred f1) (get_pred f2)
   | MOnceA         (_, f1, _, _)             -> get_pred f1
   | MOnceZ         (_, f1, _, _)             -> get_pred f1
@@ -107,7 +102,6 @@ let predicates f =
   | MAggOnce       (_inf, _state, f1, _)     -> get_pred f1
   | MPrev          (_, f1, _, _)             -> get_pred f1
   | MNext          (_, f1, _, _)             -> get_pred f1
-  | MSinceA        (_, _, f1, f2, _, _)      -> Misc.union (get_pred f1) (get_pred f2)
   | MSince         (f1, f2, _, _)            -> Misc.union (get_pred f1) (get_pred f2)
   | MOnceA         (_, f1, _, _)             -> get_pred f1
   | MOnceZ         (_, f1, _, _)             -> get_pred f1

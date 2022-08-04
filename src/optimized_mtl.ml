@@ -1,11 +1,9 @@
-(* TODO: Optimize for unbounded intervals *)
-(* TODO: Try replacing inner datastructure of idx_table with relation *)
-
 open MFOTL
 open Tuple
 
 type args = {
   a_intv: interval;
+  a_bounded: bool;
   a_pos: bool;
   a_prop1: bool;
   a_key2: int list;
@@ -64,6 +62,7 @@ let init_msaux pos intv attr1 attr2 =
   {
     ms_args = {
       a_intv = intv;
+      a_bounded = not (infinite_interval intv);
       a_pos = pos;
       a_prop1 = (attr1 = []);
       a_key2 = List.map snd matches;
@@ -111,11 +110,13 @@ let add_new_ts_msaux nt aux =
   let add = ref Relation.empty in
   do_drop_while (fun (t, _) -> in_right_ext (ts_minus nt t) intv)
     (fun (t, rel) ->
-      Queue.add (t, rel) aux.ms_inq;
+      if aux.ms_args.a_bounded then
+        Queue.add (t, rel) aux.ms_inq;
       Relation.iter (fun tup ->
         match Hashtbl.find_opt aux.ms_since tup with
         | Some t' when t' <= t ->
-            Hashtbl.replace aux.ms_in_map tup t;
+            if aux.ms_args.a_bounded then
+              Hashtbl.replace aux.ms_in_map tup t;
             add := Relation.add tup !add
         | _ -> ()
       ) rel
@@ -141,7 +142,8 @@ let join_msaux rel aux =
       let discard = idx_table_inv_semijoin aux.ms_args aux.ms_in_idx rel in
       Relation.iter (fun tup ->
           let key = Misc.get_positions aux.ms_args.a_key2 tup in
-          Hashtbl.remove aux.ms_in_map tup;
+          if aux.ms_args.a_bounded then
+            Hashtbl.remove aux.ms_in_map tup;
           Hashtbl.remove aux.ms_in_idx key;
           Hashtbl.remove aux.ms_since tup
         )
@@ -168,8 +170,11 @@ let add_new_table_msaux rel aux =
     ) rel;
   if in_right_ext ts_null aux.ms_args.a_intv then
     begin
-      Queue.add (t, rel) aux.ms_inq;
-      Relation.iter (fun tup -> Hashtbl.replace aux.ms_in_map tup t) rel;
+      if aux.ms_args.a_bounded then
+        begin
+          Queue.add (t, rel) aux.ms_inq;
+          Relation.iter (fun tup -> Hashtbl.replace aux.ms_in_map tup t) rel
+        end;
       if not aux.ms_args.a_prop1 then
         idx_table_insert aux.ms_args aux.ms_in_idx rel;
       aux.ms_in <- Relation.union aux.ms_in rel
