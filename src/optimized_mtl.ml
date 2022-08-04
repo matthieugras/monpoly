@@ -142,7 +142,7 @@ let join_msaux rel aux =
       Relation.iter (fun tup ->
           let key = Misc.get_positions aux.ms_args.a_key2 tup in
           Hashtbl.remove aux.ms_in_map tup;
-          Hashtbl.remove aux.ms_in_idx tup;
+          Hashtbl.remove aux.ms_in_idx key;
           Hashtbl.remove aux.ms_since tup
         )
         discard;
