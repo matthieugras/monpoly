@@ -28,7 +28,9 @@ let idx_table_remove args ixt rel =
     let key = Misc.get_positions args.a_key2 tup in
     match Hashtbl.find_opt ixt key with
     | None -> ()
-    | Some inner -> Hashtbl.remove inner tup
+    | Some inner ->
+        Hashtbl.remove inner tup;
+        if Hashtbl.length ixt = 0 then Hashtbl.remove ixt key
   ) rel
 
 let idx_table_inv_semijoin args ixt rel =
