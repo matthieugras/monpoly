@@ -83,6 +83,8 @@ let checkf = ref false
 let verified = ref false
 
 let new_last_ts = ref true
+let socket_path = ref ""
+let socket_input = ref false
 
 let ignore_parse_errors = ref false
 let stop_at_out_of_order_ts = ref false

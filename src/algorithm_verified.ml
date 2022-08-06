@@ -54,6 +54,7 @@ module Monitor = struct
 end
 
 module P = Log_parser.Make (Monitor)
+module S = Socket_input.Make (Monitor)
 
 let monitor_gen parse dbschema logfile fv f =
   (* compute permutation for output tuples *)
@@ -76,4 +77,8 @@ let monitor_gen parse dbschema logfile fv f =
   | Verified.Monitor.Inl e -> failwith ("Error during verified type checking: " ^ e)
 
 let monitor_string = monitor_gen (fun dbschema log -> P.parse dbschema (Lexing.from_string log))
-let monitor = monitor_gen P.parse_file
+let monitor dbschema logfile fv f = 
+  if !Misc.socket_input then
+    monitor_gen S.parse dbschema !Misc.socket_path fv f
+  else
+    monitor_gen P.parse_file dbschema logfile fv f
