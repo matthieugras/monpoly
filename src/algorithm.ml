@@ -1895,10 +1895,10 @@ let monitor_string dbschema log fv f =
 let monitor dbschema logfile fv f =
   let ctxt = init_monitor_state dbschema fv f in
   Perf.profile_enter ~tp:(-1) ~loc:Perf.loc_main_loop;
-  if !Misc.socket_input then
-    ignore (Socketinp.parse dbschema logfile ctxt)
+  (if !Misc.socket_input then
+    ignore (Socketinp.parse dbschema !Misc.socket_path ctxt)
   else
-    ignore (Parser.parse_file dbschema logfile ctxt);
+    ignore (Parser.parse_file dbschema logfile ctxt));
   Perf.profile_exit ~tp:(-1) ~loc:Perf.loc_main_loop
 
 (* Unmarshals formula & state from resume file and then starts processing
