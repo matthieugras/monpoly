@@ -34,18 +34,23 @@ let idx_table_remove args ixt rel =
   ) rel
 
 let idx_table_inv_semijoin args ixt rel =
-  let res = ref Relation.empty in
-  let add_keys inner = 
-    Hashtbl.iter (fun tup () -> res := Relation.add tup !res) inner in
-  if args.a_pos || Hashtbl.length ixt <= Relation.cardinal rel then
-    Hashtbl.iter (fun key inner ->
-      if Relation.mem key rel <> args.a_pos then add_keys inner) ixt
+  if Hashtbl.length ixt = 0 || (Relation.is_empty rel && not args.a_pos) then
+    Relation.empty
   else
-    Relation.iter (fun key ->
-      match Hashtbl.find_opt ixt key with
-      | Some inner -> add_keys inner
-      | None -> ()) rel;
-  !res
+    begin
+      let res = ref Relation.empty in
+      let add_keys inner =
+        Hashtbl.iter (fun tup () -> res := Relation.add tup !res) inner in
+      if args.a_pos || Hashtbl.length ixt <= Relation.cardinal rel then
+        Hashtbl.iter (fun key inner ->
+          if Relation.mem key rel <> args.a_pos then add_keys inner) ixt
+      else
+        Relation.iter (fun key ->
+          match Hashtbl.find_opt ixt key with
+          | Some inner -> add_keys inner
+          | None -> ()) rel;
+      !res
+    end
 
 type msaux = {
   ms_args: args;
