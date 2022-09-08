@@ -64,8 +64,8 @@ let combine ~temporal l r = {
 
 let lift_let l r = {
   log_preds = Pred_set.union l.log_preds r.log_preds;
-  conn = l.conn + r.conn;
-  height = max l.height r.height;
+  conn = l.conn + r.conn + 1;
+  height = max l.height r.height + 1;
   ntemp = l.ntemp + r.ntemp;
   temp_height = max l.temp_height r.temp_height;
   nlet = l.nlet + r.nlet + 1;
