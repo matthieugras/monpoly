@@ -249,39 +249,48 @@ let in_t2_not_in_t1 t2 matches =
    should be ordered by (x,y,z).
 *)
 let natural_join_sc1 matches rel1 rel2 =
-  let joinrel = ref Tuple_set.empty in
-  Tuple_set.iter (fun t2 ->
-    let t1_list =
-      List.map
-  (fun (pos1, pos2) ->
-    (* x is at pos1 in t1 and at pos2 in t2 *)
-    Tuple.get_at_pos t2 pos2)
-  matches
-    in
-    let t1 = Tuple.make_tuple t1_list in
-    if Tuple_set.mem t1 rel1 then
+  if Tuple_set.is_empty rel1 || Tuple_set.is_empty rel2 then
+    Tuple_set.empty
+  else
+    begin
+      let joinrel = ref Tuple_set.empty in
+      Tuple_set.iter (fun t2 ->
+        let t1_list =
+          List.map
+      (fun (pos1, pos2) ->
+        (* x is at pos1 in t1 and at pos2 in t2 *)
+        Tuple.get_at_pos t2 pos2)
+      matches
+        in
+        let t1 = Tuple.make_tuple t1_list in
+        if Tuple_set.mem t1 rel1 then
 
-      let t2_list = in_t2_not_in_t1 t2 matches in
-      let t2' = Tuple.make_tuple (t1_list @ t2_list) in
-      joinrel := Tuple_set.add t2' !joinrel
-  ) rel2;
-  !joinrel
+          let t2_list = in_t2_not_in_t1 t2 matches in
+          let t2' = Tuple.make_tuple (t1_list @ t2_list) in
+          joinrel := Tuple_set.add t2' !joinrel
+      ) rel2;
+      !joinrel
+    end
 
 (* Misc.subset attr2 attr1 *)
 let natural_join_sc2 matches rel1 rel2 =
-  let joinrel = ref Tuple_set.empty in
-  Tuple_set.iter (fun t1 ->
-    let t2 = Tuple.make_tuple (
-      List.map
-  (* x is at pos2 in t2 and at pos1 in t1 *)
-  (fun (pos2, pos1) -> Tuple.get_at_pos t1 pos1)
-  matches)
-    in
-    if Tuple_set.mem t2 rel2 then
-      joinrel := Tuple_set.add t1 !joinrel
-  ) rel1;
-  !joinrel
-
+  if Tuple_set.is_empty rel1 || Tuple_set.is_empty rel2 then
+    Tuple_set.empty
+  else
+    begin
+      let joinrel = ref Tuple_set.empty in
+      Tuple_set.iter (fun t1 ->
+        let t2 = Tuple.make_tuple (
+          List.map
+      (* x is at pos2 in t2 and at pos1 in t1 *)
+      (fun (pos2, pos1) -> Tuple.get_at_pos t1 pos1)
+      matches)
+        in
+        if Tuple_set.mem t2 rel2 then
+          joinrel := Tuple_set.add t1 !joinrel
+      ) rel1;
+      !joinrel
+    end
 
 
 let cross_product rel1 rel2 =

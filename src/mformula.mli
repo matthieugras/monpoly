@@ -9,11 +9,8 @@ type mozinfo = { mozauxrels: (int * timestamp * relation) Dllist.dllist}
 
 type moinfo  = { moauxrels: (timestamp * relation) Dllist.dllist}
 
-type msainfo = { msres: relation;
-                 msarel2: relation option;
-                 msaauxrels: (timestamp * relation) Mqueue.t}
 type msinfo  = { msrel2: relation option;
-                 msauxrels: (timestamp * relation) Mqueue.t}
+                 msaux: Optimized_mtl.msaux}
 
 type mezinfo = { mezlastev: Neval.cell;
                  mezauxrels: (int * timestamp * relation) Dllist.dllist}
@@ -45,8 +42,7 @@ type mformula =
   | MAggOnce of agg_info * Aggreg.once_aggregator * mformula * int
   | MPrev of interval * mformula * pinfo * int
   | MNext of interval * mformula * ninfo * int
-  | MSinceA of comp_two * interval * mformula * mformula * sainfo * int
-  | MSince of comp_two * interval * mformula * mformula * sinfo * int
+  | MSince of mformula * mformula * sinfo * int
   | MOnceA of interval * mformula * oainfo * int
   | MOnceZ of interval * mformula * mozinfo * int
   | MOnce of interval * mformula  * moinfo * int
