@@ -24,11 +24,8 @@ type ozinfo = {mutable oztree: (int, relation) Sliding.stree;
 type oinfo = {mutable otree: (timestamp, relation) Sliding.stree;
               mutable olast: (timestamp * relation) Dllist.cell;
               oauxrels: (timestamp * relation) Dllist.dllist}
-type sainfo = {mutable sres: relation;
-               mutable sarel2: relation option;
-               saauxrels: (timestamp * relation) Mqueue.t}
 type sinfo = {mutable srel2: relation option;
-              sauxrels: (timestamp * relation) Mqueue.t}
+              saux: Optimized_mtl.msaux}
 type ezinfo = {mutable ezlastev: Neval.cell;
                mutable eztree: (int, relation) Sliding.stree;
                mutable ezlast: (int * timestamp * relation) Dllist.cell;
@@ -63,8 +60,7 @@ type extformula =
   | EAggOnce of agg_info * Aggreg.once_aggregator * extformula * int
   | EPrev of interval * extformula * pinfo * int
   | ENext of interval * extformula * ninfo * int
-  | ESinceA of comp_two * interval * extformula * extformula * sainfo * int
-  | ESince of comp_two * interval * extformula * extformula * sinfo * int
+  | ESince of extformula * extformula * sinfo * int
   | EOnceA of interval * extformula * oainfo * int
   | EOnceZ of interval * extformula * ozinfo * int
   | EOnce of interval * extformula * oinfo * int
@@ -86,8 +82,7 @@ type extformula =
   | EAggOnce       (_inf, _state, f1, _)                         -> contains_eventually f1
   | EPrev          (dt, f1, pinf, _)                             -> contains_eventually f1
   | ENext          (dt, f1, ninf, _)                             -> contains_eventually f1
-  | ESinceA        (c2, dt, f1, f2, sainf, _)                    -> contains_eventually f1 || contains_eventually f2
-  | ESince         (c2, dt, f1, f2, sinf, _)                     -> contains_eventually f1 || contains_eventually f2
+  | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EOnceA         (dt, f1, oainf, _)                            -> contains_eventually f1
   | EOnceZ         (dt, f1, ozinf, _)                            -> contains_eventually f1
   | EOnce          (dt, f1, oinf, _)                             -> contains_eventually f1
@@ -180,19 +175,11 @@ let prerr_oinf str inf =
   prerr_string "}"
 
 
-let prerr_sainf str inf =
-  prerr_string str;
-  prerr_ainf "{srel2 = " inf.sarel2;
-  Relation.prerr_rel "; sres=" inf.sres;
-  prerr_string "; sauxrels=";
-  Misc.prerr_mqueue prerr_sauxel inf.saauxrels;
-  prerr_string "}"
-
 let prerr_sinf str inf =
   prerr_string str;
   prerr_ainf "{srel2=" inf.srel2  ;
-  prerr_string ", sauxrels=";
-  Misc.prerr_mqueue prerr_sauxel inf.sauxrels;
+  prerr_string ", saux=???";
+  (* TODO(JS): print saux *)
   prerr_string "}"
 
 
@@ -364,17 +351,8 @@ let prerr_extf str ff =
               prerr_f_rec (d+1) f1;
               prerr_f_rec (d+1) f2
 
-            | ESinceA (_,intv,f1,f2,sinf,loc) ->
-              prerr_string "SINCE";
-              MFOTL.prerr_interval intv;
-              prerr_sainf ": sinf = " sinf;
-              prerr_string "\n";
-              prerr_f_rec (d+1) f1;
-              prerr_f_rec (d+1) f2
-
-            | ESince (_,intv,f1,f2,sinf,loc) ->
-              prerr_string "SINCE";
-              MFOTL.prerr_interval intv;
+            | ESince (f1,f2,sinf,loc) ->
+              prerr_string "SINCE[???]"; (*TODO(JS): print interval*)
               prerr_sinf ": sinf=" sinf;
               prerr_string "\n";
               prerr_f_rec (d+1) f1;
@@ -446,8 +424,7 @@ let rec pp_structure ppf ff =
   | EAggOnce (_, _, f1, loc) -> pp_unary "AGG ONCE" loc f1
   | EPrev (_, f1, _, loc) -> pp_unary "PREV" loc f1
   | ENext (_, f1, _, loc) -> pp_unary "NEXT" loc f1
-  | ESinceA (_, _, f1, f2, _, loc) -> pp_binary "SINCE(A)" loc f1 f2
-  | ESince (_, _, f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
+  | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EOnceA (_, f1, _, loc) -> pp_unary "ONCE(A)" loc f1
   | EOnceZ (_, f1, _, loc) -> pp_unary "ONCE(Z)" loc f1
   | EOnce (_, f1, _, loc) -> pp_unary "ONCE" loc f1

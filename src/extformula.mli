@@ -22,11 +22,8 @@ type ozinfo = {mutable oztree: (int, relation) Sliding.stree;
 type oinfo = {mutable otree: (timestamp, relation) Sliding.stree;
               mutable olast: (timestamp * relation) Dllist.cell;
               oauxrels: (timestamp * relation) Dllist.dllist}
-type sainfo = {mutable sres: relation;
-               mutable sarel2: relation option;
-               saauxrels: (timestamp * relation) Mqueue.t}
 type sinfo = {mutable srel2: relation option;
-              sauxrels: (timestamp * relation) Mqueue.t}
+              saux: Optimized_mtl.msaux}
 type ezinfo = {mutable ezlastev: Neval.cell;
                mutable eztree: (int, relation) Sliding.stree;
                mutable ezlast: (int * timestamp * relation) Dllist.cell;
@@ -61,8 +58,7 @@ type extformula =
   | EAggOnce of agg_info * Aggreg.once_aggregator * extformula * int
   | EPrev of interval * extformula * pinfo * int
   | ENext of interval * extformula * ninfo * int
-  | ESinceA of comp_two * interval * extformula * extformula * sainfo * int
-  | ESince of comp_two * interval * extformula * extformula * sinfo * int
+  | ESince of extformula * extformula * sinfo * int
   | EOnceA of interval * extformula * oainfo * int
   | EOnceZ of interval * extformula * ozinfo * int
   | EOnce of interval * extformula * oinfo * int

@@ -240,8 +240,7 @@ let earliest_cell lastev mf =
 
     | MAnd (_, f1, f2, _, _)
     | MOr (_, f1, f2, _, _)
-    | MSinceA (_, _, f1, f2, _, _)
-    | MSince (_, _, f1, f2, _, _) -> go f1; go f2
+    | MSince (f1, f2, _, _) -> go f1; go f2
   in
   go mf; !earliest
 
@@ -285,23 +284,13 @@ let combine_ainfo ainf1 ainf2 =
 let combine_agg_once _state1 _state2 =
   failwith "State merging for aggregations has not been implemented."
 
-let combine_sainfo sainf1 sainf2 =
-  let sarel2 = match (sainf1.sarel2, sainf2.sarel2) with
-  | (Some r1, Some r2) -> Some (rel_u r1 r2)
-  | (None, None) -> None
-  | _ -> raise (Type_error ("Mismatched states in ainfo"))
-  in
-  let saauxrels = combine_mq sainf1.saauxrels sainf2.saauxrels in
-  {sres = (rel_u sainf1.sres sainf2.sres); sarel2 = sarel2; saauxrels = saauxrels}
-
 let combine_sinfo sinf1 sinf2  =
   let srel2 = match (sinf1.srel2, sinf2.srel2) with
   | (Some r1, Some r2) -> Some (rel_u r1 r2)
   | (None, None) -> None
   | _ -> raise (Type_error ("Mismatched states in ainfo"))
   in
-  let sauxrels = combine_mq sinf1.sauxrels sinf2.sauxrels in
-  {srel2 = srel2; sauxrels = sauxrels}
+  {srel2 = srel2; saux = failwith "not implemented"}
 
 let combine_muninfo c0 muninf1 muninf2 =
   let mlast1 = combine_cells c0 muninf1.mlast1 muninf2.mlast1 in
@@ -380,12 +369,9 @@ let comb_m lastev f1 f2 =
       -> MPrev          (dt, comb_m f11 f21, pinf1, loc1)
     | (MNext (dt, f11, ninf1, loc1), MNext ( _, f21, ninf2, loc2)) when loc1 = loc2
       -> MNext          (dt, comb_m f11 f21, ninf1, loc1)
-    | (MSinceA (c2, dt, f11, f12, sainf1, loc1), MSinceA( _, _, f21, f22, sainf2, loc2))
+    | (MSince (f11, f12, sinf1, loc1), MSince(f21, f22, sinf2, loc2))
       when loc1 = loc2
-      -> MSinceA        (c2, dt, comb_m f11 f21, comb_m f12 f22, combine_sainfo sainf1 sainf2, loc1)
-    | (MSince (c2, dt, f11, f12, sinf1, loc1), MSince( _, _, f21, f22, sinf2, loc2))
-      when loc1 = loc2
-      -> MSince         (c2, dt, comb_m f11 f21, comb_m f12 f22, combine_sinfo sinf1 sinf2, loc1)
+      -> MSince         (comb_m f11 f21, comb_m f12 f22, combine_sinfo sinf1 sinf2, loc1)
     | (MOnceA (dt, f11, oainf1, loc1), MOnceA ( _, f21, oainf2, loc2))
       when loc1 = loc2
       -> MOnceA         (dt, comb_m f11 f21, combine_oainfo oainf1 oainf2, loc1)
@@ -557,24 +543,15 @@ let split_state mapping mf size =
   let split_agg_once _state _p =
     failwith "State splitting for aggregations has not been implemented."
   in
-  let split_sainfo sainf p1 p2 =
-    let arr = Array.init size (fun i -> None) in 
-    let sarels = match sainf.sarel2 with
-    | Some r -> let states = (split r p2) in Array.map (fun s ->  Some s) states
-    | None -> arr
-    in
-    let queues = split_mqueue sainf.saauxrels p2 in    
-    let sres = split sainf.sres p2 in 
-    Array.mapi (fun i e ->  {sres = e; sarel2 = sarels.(i); saauxrels = queues.(i)}) sres
-  in
   let split_sinfo sinf p1 p2 =
     let arr = Array.init size (fun i -> None) in 
     let srels = match sinf.srel2 with
     | Some r -> let states = (split r p2) in Array.map (fun s ->  Some s) states
     | None -> arr
     in
-    let queues = split_mqueue sinf.sauxrels p2 in    
-    Array.map2 (fun srel2 nq -> {srel2 = srel2; sauxrels = nq}) srels queues
+    failwith "not implemented"
+    (*let queues = split_mqueue sinf.sauxrels p2 in    
+    Array.map2 (fun srel2 nq -> {srel2 = srel2; sauxrels = nq}) srels queues*)
   in
   let split_oainfo oainf p =
     let queues = split_mqueue oainf.oaauxrels p in   
@@ -675,12 +652,10 @@ let split_state mapping mf size =
     | MNext          (dt, f1, ninf, loc)                             ->
       (*print_endline "next";*)
       Array.map (fun e -> MNext(dt, e, ninf, loc)) (split_f f1)
-    | MSinceA        (c, dt, f1, f2, sainf, loc)                     ->
-      (*print_endline "sincea";*)
-      let a1 = (split_f f1) in let a2 = (split_f f2) in  Array.mapi (fun i e -> MSinceA(c, dt, a1.(i), a2.(i), e, loc)) (split_sainfo sainf (p1 f1) (p1 f2))
-    | MSince         (c, dt, f1, f2, sinf, loc)                      -> 
+    | MSince         (f1, f2, sinf, loc)                             -> 
       (*print_endline "since";*)
-      let a1 = (split_f f1) in let a2 = (split_f f2) in  Array.mapi (fun i e -> MSince(c, dt, a1.(i), a2.(i), e, loc)) (split_sinfo sinf (p1 f1) (p1 f2))
+      (*let a1 = (split_f f1) in let a2 = (split_f f2) in  Array.mapi (fun i e -> MSince(c, dt, a1.(i), a2.(i), e, loc)) (split_sinfo sinf (p1 f1) (p1 f2))*)
+      failwith "not implemented"
     | MOnceA         (dt, f1, oainf, loc)                            ->
       (*print_endline "oncea";*)
       let a1 = (split_f f1) in Array.mapi (fun i e -> MOnceA(dt, a1.(i), e, loc)) (split_oainfo oainf (p1 f1))                      
@@ -774,8 +749,7 @@ let rec print_ef = function
   | EAggOnce       (_inf, _state, f1, _)                         -> print_endline "AggOnce";print_ef f1
   | EPrev          (dt, f1, pinf, _)                             -> print_endline "Prev";print_ef f1
   | ENext          (dt, f1, ninf, _)                             -> print_endline "Next";print_ef f1
-  | ESinceA        (c2, dt, f1, f2, sainf, _)                    -> print_endline "SinceA";print_ef f1;print_ef f2
-  | ESince         (c2, dt, f1, f2, sinf, _)                     -> print_endline "Since";print_ef f1;print_ef f2
+  | ESince         (f1, f2, sinf, _)                             -> print_endline "Since";print_ef f1;print_ef f2
   | EOnceA         (dt, f1, oainf, _)                            -> print_endline "OnceA";print_ef f1
   | EOnceZ         (dt, f1, ozinf, _)                            -> print_endline "OnceZ";print_ef f1
   | EOnce          (dt, f1, oinf, _)                             -> print_endline "Once";print_ef f1
