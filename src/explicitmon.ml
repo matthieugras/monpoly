@@ -169,6 +169,7 @@ let ctx_of_sign sign =
   { fpmap; vmap; fptymap }
 
 let get_fv_types ctx f =
+  let orig_fv = MFOTL.free_vars f in
   let s =
     Pred_map.fold
       (fun (name, arity) id ps ->
@@ -177,7 +178,8 @@ let get_fv_types ctx f =
         (name, tys) :: ps)
       ctx.fpmap []
   in
-  fst (check_syntax s f)
+  let fvtypes = fst (check_syntax s f) in
+  List.map (fun v -> (v, List.assoc v fvtypes)) orig_fv
 
 type cst_type = CstEq | CstLess | CstLessEq
 type join_type = NatJoin | AntiJoin
@@ -334,11 +336,16 @@ let rec translate_formula ctx = function
       let ctx = restore_pred ctx name arity new_id old_info in
       (MLet (new_id, pvars, f1, f2), ctx)
   | LetPast ((name, arity, terms), f1, f2) ->
-      let fvtys = get_fv_types ctx f1 in
+      let ptys =
+        match !letpast_types with
+        | l :: ls ->
+            letpast_types := ls;
+            l
+        | _ -> failwith "no typed found for letpast"
+      in
       let pvars =
         map (function Var v -> v | _ -> failwith "not a var") terms
       in
-      let ptys = map (fun v -> List.assoc v fvtys) pvars in
       let ctx, new_id, old_info = overwrite_pred ctx name arity false ptys in
       let f1, ctx = translate_formula ctx f1 in
       let pvars = map (fun v -> Var_map.find v ctx.vmap) pvars in

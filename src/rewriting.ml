@@ -45,6 +45,7 @@ open Verified
 
 type expand_mode = ExpandAll | ExpandNonshared
 
+let letpast_types = ref []
 let no_rw = ref false
 let unfold_let = ref None
 
@@ -1387,7 +1388,6 @@ let  type_check_term_debug d (sch, vars) typ term =
         (s2,v2,exp_typ) in
   type_check_term (sch,vars) typ term
 
-
 (*
 Type judgement is of the form (Δ;Γ) ⊢ ϕ wff  
 where Δ is the predicate schema
@@ -1509,6 +1509,8 @@ let rec type_check_formula (sch, vars) f =
     assert((List.length v1) = (List.length new_typed_vars));
     let new_sig = List.map (fun v -> (v, List.assoc v v1)) new_vars in
     let new_sig = List.map (fun (_,t) -> t) new_sig in
+    letpast_types := !letpast_types
+      @ [List.map (function | TCst t -> t | _ -> failwith "expected tcst") new_sig];
     let (shadowed_pred,rest) = List.partition (fun (p,_) -> (n,a)=p) s1 in
     let delta = ((n,a),new_sig)::rest in
     let (s2, v2, f2) = type_check_formula (delta,vars) f2 in
