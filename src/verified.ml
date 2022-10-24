@@ -8943,6 +8943,8 @@ end = struct
   let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (fold append_queue ys xs)
   let mbuf_t_empty : 'a mbuf_t = MBuf2_t empty_queue
 
+  let bla_to_int (Nat i) = Z.to_string i
+
   type bla = (string * nat, event_data option list set list) mapping [@@deriving show]
   type bla2 = event_data option list set list [@@deriving show]
 
@@ -8953,6 +8955,8 @@ end = struct
     Printf.printf "eval with db, db: %s\n" (show_bla updb);
     let ysa, phia = eval ts updb phi in
     Printf.printf "eval returned: %s\n" (show_bla2 ysa);
+    Printf.printf "i is: %s\n" (bla_to_int (plus_nata i (size_lista xs)));
+    Printf.printf "j is: %s\n" (bla_to_int j);
     if not (equal_nata (size _D phia) (size _D phi)) then begin
       Printf.printf "breaking 1\n";
       (mbuf_t_empty, (zero_nata, (None, phi)))
@@ -11730,7 +11734,7 @@ end = struct
         (zs, MAnd (a_phi, phia, pos, a_psi, psia, buf))
     | j, n, ts, db, MLetPast (p, m, phi, psi, i, bufa) ->
         let xs, (ia, (buf, phia)) =
-          Printf.printf "letpast_eval from meval\n";
+          Printf.printf "letpast_eval from meval with bla %s\n" (bla_to_int j);
           letpast_meeval0
             ( ccompare_prod ccompare_string8 ccompare_nat,
               equal_prod equal_string8 equal_nat )
@@ -11745,6 +11749,7 @@ end = struct
                (p, m) (rep_mbuf_t xs) db)
             psi
         in
+        Printf.printf "Mlet returning: %s\n" (show_bla2 ys);
         (ys, MLetPast (p, m, phia, psia, ia, buf))
     | j, n, ts, db, MLet (p, m, phi, psi) ->
         let xs, phia = meeval j m ts db phi in
